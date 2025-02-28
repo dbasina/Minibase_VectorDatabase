@@ -3,11 +3,9 @@ package global;
 public class Vector100Dtype
 {
     public short[] vector;
-    public double magnitude;
     public Vector100Dtype()
     {
         vector = new short[100] ;
-        magnitude = 0.0;
     }
 
     public double get_magnitude()

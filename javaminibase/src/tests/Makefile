@@ -22,7 +22,7 @@ DBTest:DBTest.java
 dbtest: DBTest
 	$(JAVA) tests.DBTest
 
-# test heapfile 
+# test heapfile
 
 HFTest:HFTest.java
 	$(JAVAC) TestDriver.java HFTest.java

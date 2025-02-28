@@ -242,6 +242,16 @@ public class TupleUtils
                     throw new TupleUtilsException(e, "FieldNumberOutOfBoundException is caught by TupleUtils.java");
                 }
                 break;
+            case AttrType.attrVector100D:
+                try
+                {
+                    value.set100DVectFld(fld_no, tuple.get100DVectFld(fld_no));
+                }
+                catch (FieldNumberOutOfBoundException e)
+                {
+                    throw new TupleUtilsException(e, "FieldNumberOutOfBoundException is caught by TupleUtils.java");
+                }
+                break;
             default:
                 throw new UnknowAttrType(null, "Don't know how to handle attrSymbol, attrNull");
 

@@ -16,14 +16,8 @@ public class pnodeSplayPQ extends pnodePQ
      * the root of the tree
      */
     protected pnodeSplayNode root;
-  /*
-  pnodeSplayNode*   leftmost();
-  pnodeSplayNode*   rightmost();
-  pnodeSplayNode*   pred(pnodeSplayNode* t);
-  pnodeSplayNode*   succ(pnodeSplayNode* t);
-  void            _kill(pnodeSplayNode* t);
-  pnodeSplayNode*   _copy(pnodeSplayNode* t);
-  */
+    protected pnodeSplayNode target;
+
 
     /**
      * class constructor, sets default values.
@@ -54,6 +48,27 @@ public class pnodeSplayPQ extends pnodePQ
     }
 
     /**
+     * class constructor.
+     *
+     * @param fldNo   the field number for sorting
+     * @param fldType the type of the field for sorting
+     * @param order   the order of sorting (Ascending or Descending)
+     * @param Target  the target vector to compare to
+     */
+    public pnodeSplayPQ(int fldNo, AttrType fldType, TupleOrder order, pnode target_node)
+    {
+        root = null;
+        target = new pnodeSplayNode(target_node);
+        count = 0;
+        fld_no = fldNo;
+        fld_type = fldType;
+        sort_order = order;
+
+    }
+
+
+
+    /**
      * Inserts an element into the binary tree.
      *
      * @param item the element to be inserted
@@ -74,7 +89,7 @@ public class pnodeSplayPQ extends pnodePQ
             return;
         }
 
-        int comp = pnodeCMP(item, t.item);
+        int comp = pnodeCMP(item, t.item, target.item);
 
         pnodeSplayNode l = pnodeSplayNode.dummy;
         pnodeSplayNode r = pnodeSplayNode.dummy;
@@ -92,7 +107,7 @@ public class pnodeSplayPQ extends pnodePQ
                     comp = 0;
                     done = true;
                 }
-                else comp = pnodeCMP(item, tr.item);
+                else comp = pnodeCMP(item, tr.item, target.item);
 
                 if ((sort_order.tupleOrder == TupleOrder.Ascending && comp <= 0) || (sort_order.tupleOrder == TupleOrder.Descending && comp >= 0))
                 {
@@ -110,7 +125,7 @@ public class pnodeSplayPQ extends pnodePQ
                         comp = 0;
                         done = true;
                     }
-                    else comp = pnodeCMP(item, trr.item);
+                    else comp = pnodeCMP(item, trr.item, target.item);
 
                     if ((t.rt = tr.lt) != null) t.rt.par = t;
                     tr.lt = t;
@@ -130,7 +145,7 @@ public class pnodeSplayPQ extends pnodePQ
                     comp = 0;
                     done = true;
                 }
-                else comp = pnodeCMP(item, tl.item);
+                else comp = pnodeCMP(item, tl.item, target.item);
 
                 if ((sort_order.tupleOrder == TupleOrder.Ascending && comp >= 0) || (sort_order.tupleOrder == TupleOrder.Descending && comp <= 0))
                 {
@@ -148,7 +163,7 @@ public class pnodeSplayPQ extends pnodePQ
                         comp = 0;
                         done = true;
                     }
-                    else comp = pnodeCMP(item, tll.item);
+                    else comp = pnodeCMP(item, tll.item, target.item);
 
                     if ((t.lt = tl.rt) != null) t.lt.par = t;
                     tl.rt = t;

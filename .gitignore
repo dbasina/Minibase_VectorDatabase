@@ -1,3 +1,13 @@
 .idea
 javaminibase/.idea
 javaminibase/src/Makefile
+javaminibase/src/btree/Makefile
+javaminibase/src/bufmgr/Makefile
+javaminibase/src/catalog/Makefile
+javaminibase/src/chainexception/Makefile
+javaminibase/src/diskmgr/Makefile
+javaminibase/src/global/Makefile
+javaminibase/src/heap/Makefile
+javaminibase/src/index/Makefile
+javaminibase/src/iterator/Makefile
+javaminibase/src/tests/Makefile

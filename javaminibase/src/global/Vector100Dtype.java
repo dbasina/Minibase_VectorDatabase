@@ -5,9 +5,17 @@ public class Vector100Dtype
     public short[] vector;
     public Vector100Dtype()
     {
-        vector = new short[100] ;
+        this.vector = new short[100] ;
     }
 
+    public Vector100Dtype(short[] vector)
+    {
+        if (vector == null || vector.length != 100)
+        {
+            throw new IllegalArgumentException("The vector must have exactly 100 elements.");
+        }
+        this.vector = vector;
+    }
     public double get_magnitude()
     {
         double sum = 0.0;

@@ -12,7 +12,7 @@ public class Query
     {
         if (args.length != 4)
         {
-            System.err.println("scripts.query requires 4 arguments.");
+            System.err.println("query requires 4 arguments.");
             System.exit(1);
         }
         String db_name = args[0];
@@ -39,7 +39,7 @@ public class Query
                     throw new IOException("query_specification requires at least 3 parameters.");
                 }
 
-                // Extract the parameters from the scripts.query specification.
+                // Extract the parameters from the query specification.
                 int vector_field_number = Integer.parseInt(parameters[0]);
                 String target_vector_file_name = parameters[1];
                 int distance = Integer.parseInt(parameters[2]);
@@ -52,7 +52,7 @@ public class Query
                 // Extract the target vector from the target vector file
                 Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
 
-                // Print the scripts.query details
+                // Print the query details
                 System.out.println("Range Query Parsed:");
                 System.out.println("QA: " + vector_field_number + ", D: " + distance + ", target vector: " + Arrays.toString(target_vector.vector));
                 System.out.println("Output fields: " + Arrays.toString(output_fields));
@@ -78,7 +78,7 @@ public class Query
                     throw new IOException("query_specification requires at least 3 parameters.");
                 }
 
-                // Extract the parameters from the scripts.query specification.
+                // Extract the parameters from the query specification.
                 int vector_field_number = Integer.parseInt(parameters[0]);
                 String target_vector_file_name = parameters[1];
                 int number_of_nearest_neighbors = Integer.parseInt(parameters[2]);
@@ -91,7 +91,7 @@ public class Query
                 // Extract the target vector from the target vector file
                 Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
 
-                // Print the scripts.query details
+                // Print the query details
                 System.out.println("Range Query Parsed:");
                 System.out.println("QA: " + vector_field_number + ", K: " + number_of_nearest_neighbors + ", target vector: " + Arrays.toString(target_vector.vector));
                 System.out.println("Output fields: " + Arrays.toString(output_fields));

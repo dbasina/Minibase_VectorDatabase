@@ -43,8 +43,10 @@ public class Sort extends Iterator implements GlobalConst
     private boolean useBM = true; // flag for whether to use buffer manager
 
     // fields to handle vector100d sorts
-    public Vector100Dtype Target;
-    public int k;
+    private Vector100Dtype Target;
+    private Tuple targetTuple;
+    private pnode targetNode;
+    private int k;
 
     /**
      * Set up for merging the runs.
@@ -153,9 +155,8 @@ public class Sort extends Iterator implements GlobalConst
         Tuple tuple;
         pnode cur_node;
 
-        // lastElem and target_tuple manage how the file system based sorting works.
+        // lastElem and targetTuple manage how the file system based sorting works.
         Tuple lastElem = new Tuple(tuple_size);
-        Tuple target_tuple = new Tuple(tuple_size);
 
         // Set tuple headers.
         try
@@ -163,37 +164,17 @@ public class Sort extends Iterator implements GlobalConst
             // if we're dealing with 100Dvectors, then setup lastElem value
             // This helps when doing the writes to files in the latter half of this code.
             lastElem.setHdr(n_cols, _in, str_lens);
-            target_tuple.setHdr(n_cols, _in, str_lens);
         }
         catch (Exception e)
         {
             throw new SortException(e, "Sort.java: setHdr() failed");
         }
 
-        // Set tuple values
-        try
-        {
-
-            MIN_VAL(target_tuple, sortFldType);
-        }
-        catch (UnknowAttrType e)
-        {
-            throw new SortException(e, "Sort.java: UnknowAttrType caught from MIN_VAL()");
-        }
-        catch (Exception e)
-        {
-            throw new SortException(e, "MIN_VAL failed");
-        }
-
-
         // target 100dvector's pnode. To be able to reuse sort for 100dvectors.
         // we assign target_tuple to this pnode's tuple.
         // pnode attributes:
         //      -run number
         //      -tuple
-
-        pnode target_node = new pnode();
-        target_node.tuple = target_tuple;
 
         // Initialize 2 splay priority queues.
         // pnodeSplayPQ has 2 attributes:
@@ -214,8 +195,8 @@ public class Sort extends Iterator implements GlobalConst
         }
         else
         {
-            pnodeSplayPQ Q1 = new pnodeSplayPQ(_sort_fld, sortFldType, order, target_node);
-            pnodeSplayPQ Q2 = new pnodeSplayPQ(_sort_fld, sortFldType, order, target_node);
+            pnodeSplayPQ Q1 = new pnodeSplayPQ(_sort_fld, sortFldType, order, targetNode);
+            pnodeSplayPQ Q2 = new pnodeSplayPQ(_sort_fld, sortFldType, order, targetNode);
             pcurr_Q = Q1;
             pother_Q = Q2;
         }
@@ -309,24 +290,11 @@ public class Sort extends Iterator implements GlobalConst
 
             // compare cur_node.tuple to lastElem (smallest if asc or largest if desc possible value).
             if(sortFldType.attrType == AttrType.attrVector100D) {
-                int currNodeDistance = TupleUtils.CompareTupleWithTuple(sortFldType, cur_node.tuple, _sort_fld, target_tuple, _sort_fld);
-                int lastElemDistance = TupleUtils.CompareTupleWithTuple(sortFldType, lastElem, _sort_fld, target_tuple, _sort_fld);
-                if (currNodeDistance < lastElemDistance)
-                    comp_res = -1;
-                else
-                    comp_res = 1;
+                comp_res = TupleUtils.compareTuplesWrtTargetVectorTuple(cur_node.tuple, lastElem, targetTuple, _sort_fld);
             } else {
                 comp_res = TupleUtils.CompareTupleWithValue(sortFldType, cur_node.tuple, _sort_fld, lastElem);
             }
-
-            // for regular values
-            // comp_res < 0 implies cur_node.tuple < lastElem
-            // comp_res > 0 implies cur_node.tuple > lastElem
-
-            // for 100DVectors
-            // (comp_res > 0 && Ascending) order always, since comp_res = distance(target_tuple,cur_node.tuple)
-            // TupleOrder is always going to be Ascending here for 100DVectors.
-            // therefore if statement never gets executed for 100Dvectors
+            
             if ((comp_res < 0 && order.tupleOrder == TupleOrder.Ascending) || (comp_res > 0 && order.tupleOrder == TupleOrder.Descending))
             {
                 // doesn't fit in current run, put into the other queue
@@ -889,12 +857,14 @@ public class Sort extends Iterator implements GlobalConst
         // Self organizing trees on insert.
         // input - sort_fied number, field attribute type, sort field order.
 
-        Tuple target_tuple = new Tuple(tuple_size);
-        target_tuple.setHdr(n_cols, _in, str_lens);
-        target_tuple.set100DVectFld(_sort_fld, target_vector);
-        pnode target_node = new pnode();
-        target_node.tuple = target_tuple;
-        Q = new pnodeSplayPQ(sort_fld, in[sort_fld - 1], order, target_node);
+        Target = target_vector;
+        k = k_nearest;
+        targetTuple = new Tuple(tuple_size);
+        targetTuple.setHdr(n_cols, _in, str_lens);
+        targetTuple.set100DVectFld(_sort_fld, target_vector);
+        targetNode = new pnode();
+        targetNode.tuple = targetTuple;
+        Q = new pnodeSplayPQ(sort_fld, in[sort_fld - 1], order, targetNode);
 
         // setup buffer tuple.
         op_buf = new Tuple(tuple_size);   // need Tuple.java
@@ -906,9 +876,6 @@ public class Sort extends Iterator implements GlobalConst
         {
             throw new SortException(e, "Sort.java: op_buf.setHdr() failed");
         }
-
-        Target = target_vector;
-        k = k_nearest;
     }
 
     /**

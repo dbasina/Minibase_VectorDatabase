@@ -99,21 +99,8 @@ public abstract class pnodePQ
      * @throws TupleUtilsException error in tuple compare routines
      */
     public int pnodeVectorCMP(pnode a, pnode b, pnode target)
-            throws IOException, UnknowAttrType, TupleUtilsException
-    {
-        int a_distance = TupleUtils.CompareTupleWithTuple(fld_type, a.tuple, fld_no, target.tuple, fld_no);
-        int b_distance = TupleUtils.CompareTupleWithTuple(fld_type, b.tuple, fld_no, target.tuple, fld_no);
-
-        int ans;
-        if (a_distance <= b_distance)
-        {
-            ans = -1;
-        }
-        else
-        {
-            ans = 1;
-        }
-        return ans;
+            throws IOException, UnknowAttrType, TupleUtilsException {
+        return TupleUtils.compareTuplesWrtTargetVectorTuple(a.tuple, b.tuple, target.tuple, fld_no);
     }
 
     public int pnodeCMP(pnode a, pnode b)

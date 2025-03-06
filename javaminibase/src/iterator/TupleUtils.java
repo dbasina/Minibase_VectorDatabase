@@ -402,6 +402,17 @@ public class TupleUtils
         }
         return res_str_sizes;
     }
+
+    public static int compareTuplesWrtTargetVectorTuple(Tuple a, Tuple b, Tuple target, int fldNo) throws UnknowAttrType, IOException, TupleUtilsException {
+        AttrType vectorType = new AttrType(AttrType.attrVector100D);
+        int a_distance = TupleUtils.CompareTupleWithTuple(vectorType, a, fldNo, target, fldNo);
+        int b_distance = TupleUtils.CompareTupleWithTuple(vectorType, b, fldNo, target, fldNo);
+
+        if (a_distance <= b_distance)
+            return -1;
+        else
+            return 1;
+    }
 }
 
 

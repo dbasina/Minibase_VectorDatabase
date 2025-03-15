@@ -358,7 +358,8 @@ public class LSHFIndex
         // Call sort on dfRIDDump
         int sortFieldNumber = 3;
         TupleOrder sortOrder = new TupleOrder(TupleOrder.Ascending);
-        Heapfile cleanRidDump = openDeleteAndOpenHeapFile(CLEAN_RID_DUMP_HEAP_FILE_NAME);
+        // Heapfile cleanRidDump = openDeleteAndOpenHeapFile(CLEAN_RID_DUMP_HEAP_FILE_NAME);
+        Heapfile cleanRidDump = openDeleteAndOpenHeapFile(UNION_DUMP_HEAP_FILE_NAME);
         Sort ridDumpSort = new Sort(RID_DUMP_TUPLE_ATTR_TYPES, (short) RID_DUMP_TUPLE_ATTR_TYPES.length, RID_DUMP_TUPLE_STR_LENGTHS, ridDumpScan, sortFieldNumber, sortOrder, RID_DUMP_TUPLE_STR_LENGTHS[0], Query.numBuffersForSort);
         try {
             // iterate over sorted RID_DUMP_HEAP_FILE
@@ -386,27 +387,27 @@ public class LSHFIndex
         // Read from CLEAN_RID_DUMP_HEAP_FILE, extract the tuple for that RID in the Data File, insert into union dump.
         // Expected no duplicates
         // Nothing changes for cleanRidScan in terms of structure of tuples. So we reuse the MACROS that we used for RID_DUMP_TUPLES.
-        FileScan cleanRidScan = new FileScan(CLEAN_RID_DUMP_HEAP_FILE_NAME, RID_DUMP_TUPLE_ATTR_TYPES, RID_DUMP_TUPLE_STR_LENGTHS, (short) RID_DUMP_TUPLE_ATTR_TYPES.length, RID_DUMP_TUPLE_ATTR_TYPES.length, RID_DUMP_TUPLE_PROJ_LIST, null);
-        Tuple cleanRidTuple = cleanRidScan.get_next();
+        // FileScan cleanRidScan = new FileScan(CLEAN_RID_DUMP_HEAP_FILE_NAME, RID_DUMP_TUPLE_ATTR_TYPES, RID_DUMP_TUPLE_STR_LENGTHS, (short) RID_DUMP_TUPLE_ATTR_TYPES.length, RID_DUMP_TUPLE_ATTR_TYPES.length, RID_DUMP_TUPLE_PROJ_LIST, null);
+        // Tuple cleanRidTuple = cleanRidScan.get_next();
 
         // Create delete create again.
         // Clearing previous unionDump and starting fresh.
-        Heapfile unionDump = openDeleteAndOpenHeapFile(UNION_DUMP_HEAP_FILE_NAME);
+        // Heapfile unionDump = openDeleteAndOpenHeapFile(UNION_DUMP_HEAP_FILE_NAME);
 
-        while (cleanRidTuple != null)
-        {
-            unionDump.insertRecord(
-                    dataFile.getRecord(new RID(new PageId(cleanRidTuple.getIntFld(1)), cleanRidTuple.getIntFld(2)))
-                            .getTupleByteArray()
-            );
+        // while (cleanRidTuple != null)
+        // {
+            // unionDump.insertRecord(
+            //         dataFile.getRecord(new RID(new PageId(cleanRidTuple.getIntFld(1)), cleanRidTuple.getIntFld(2)))
+            //                 .getTupleByteArray()
+            // );
 
-            cleanRidTuple = cleanRidScan.get_next();
-        }
-        ScriptMetrics.setTimeUnionDataCopyEnd();
-        cleanRidScan.close();
-        cleanRidDump.deleteFile();
+        //     cleanRidTuple = cleanRidScan.get_next();
+        // }
+        // ScriptMetrics.setTimeUnionDataCopyEnd();
+        // cleanRidScan.close();
+        // cleanRidDump.deleteFile();
 
-        return unionDump;
+        return cleanRidDump;
     }
 
 

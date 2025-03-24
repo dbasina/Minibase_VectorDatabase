@@ -4,6 +4,7 @@ import java.io.*;
 
 import global.*;
 import heap.*;
+import scripts.BatchInsert;
 
 /**
  * The Sort class sorts a file. All necessary information are passed as
@@ -49,6 +50,9 @@ public class Sort extends Iterator implements GlobalConst
     private Tuple targetTuple;
     private pnode targetNode;
     private int k;
+
+    private Heapfile dataFile;
+    private boolean isRidBased = false;
 
     /**
      * Set up for merging the runs.
@@ -560,6 +564,448 @@ public class Sort extends Iterator implements GlobalConst
     }
 
     /**
+     * Generate sorted runs.
+     * Using heap sort.
+     *
+     * @param max_elems   maximum number of elements in heap
+     * @param sortFldType attribute type of the sort field
+     * @param sortFldLen  length of the sort field
+     * @return number of runs generated
+     * @throws IOException    from lower layers
+     * @throws SortException  something went wrong in the lower layer.
+     * @throws JoinsException from <code>Iterator.get_next()</code>
+     */
+    private int generate_runs_with_rids(int max_elems, AttrType sortFldType, int sortFldLen)
+            throws IOException,
+                   SortException,
+                   UnknowAttrType,
+                   TupleUtilsException,
+                   JoinsException,
+                   Exception
+    {
+        Tuple tuple;
+        pnode cur_node;
+
+        // lastElem and targetTuple manage how the file system based sorting works.
+        Tuple lastElem = new Tuple(tuple_size);
+
+        // Set tuple headers.
+        try
+        {
+            // if we're dealing with 100Dvectors, then setup lastElem value
+            // This helps when doing the writes to files in the latter half of this code.
+            lastElem.setHdr(n_cols, _in, str_lens);
+        }
+        catch (Exception e)
+        {
+            throw new SortException(e, "Sort.java: setHdr() failed");
+        }
+
+        // target 100dvector's pnode. To be able to reuse sort for 100dvectors.
+        // we assign target_tuple to this pnode's tuple.
+        // pnode attributes:
+        //      -run number
+        //      -tuple
+
+        // Initialize 2 splay priority queues.
+        // pnodeSplayPQ has 2 attributes:
+        //                  pnodeSplaynode root
+        //                  pnodeSplaynode target (this is the 100dvector target node)
+
+        pnodeSplayPQ pcurr_Q = null;
+        pnodeSplayPQ pother_Q = null;
+
+        // 2 constructors.
+        // one for regular datatypes. another for 100dvector datatypes.
+        if (sortFldType.attrType != AttrType.attrVector100D)
+        {
+            pnodeSplayPQ Q1 = new pnodeSplayPQ(_sort_fld, sortFldType, order);
+            pnodeSplayPQ Q2 = new pnodeSplayPQ(_sort_fld, sortFldType, order);
+            pcurr_Q = Q1;
+            pother_Q = Q2;
+        }
+        else
+        {
+            pnodeSplayPQ Q1 = new pnodeSplayPQ(_sort_fld, sortFldType, order, targetNode);
+            pnodeSplayPQ Q2 = new pnodeSplayPQ(_sort_fld, sortFldType, order, targetNode);
+            pcurr_Q = Q1;
+            pother_Q = Q2;
+        }
+
+        // this is the current run number tracker.
+        int run_num = 0;
+
+        // number of elements in both queues.
+        int p_elems_curr_Q = 0;
+        int p_elems_other_Q = 0;
+
+        // comparision result.
+        int comp_res;
+
+        if (order.tupleOrder == TupleOrder.Ascending)
+        {
+            try
+            {
+                MIN_VAL(lastElem, sortFldType);
+            }
+            catch (UnknowAttrType e)
+            {
+                throw new SortException(e, "Sort.java: UnknowAttrType caught from MIN_VAL()");
+            }
+            catch (Exception e)
+            {
+                throw new SortException(e, "MIN_VAL failed");
+            }
+        }
+        else
+        {
+            // if in vector sort, we come here, then we cooked.
+            try
+            {
+                MAX_VAL(lastElem, sortFldType);
+            }
+            catch (UnknowAttrType e)
+            {
+                throw new SortException(e, "Sort.java: UnknowAttrType caught from MAX_VAL()");
+            }
+            catch (Exception e)
+            {
+                throw new SortException(e, "MIN_VAL failed");
+            }
+        }
+
+        // maintain a fixed maximum number of elements in the heap
+        // Load up current queue.
+        while ((p_elems_curr_Q + p_elems_other_Q) < max_elems)
+        {
+            // _am is a filescan object.
+            // filescan extends iterator.
+            // we read heapfiles with input data using _am.
+            try
+            {
+                
+                // Fetch the next tuple from the iterator
+                Tuple temp = _am.get_next();
+                if (temp == null) {
+                    break;
+                }
+
+                // Extract the RID from the tuple
+                RID rid = new RID(new PageId(temp.getIntFld(1)), temp.getIntFld(2));
+
+                // Fetch the tuple from the data file using the RID
+                try {
+                    tuple = dataFile.getRecord(rid);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new SortException(e, "Sort.java: getRecord() failed");
+                }
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+                throw new SortException(e, "Sort.java: get_next() failed");
+            }
+
+            // if we get empty value, we're done reading input.
+            if (tuple == null)
+            {
+                break;
+            }
+
+            // If we get the next element and its not null.
+            // Create a node and assign the current tuple from input to it.
+            cur_node = new pnode();
+            cur_node.tuple = new Tuple(tuple);
+
+            // Enqueue current node. This probably needs to be modded.
+            pcurr_Q.enq(cur_node);
+            p_elems_curr_Q++;
+        }
+
+        // now the queue is full, starting writing to file while keep trying
+        // to add new tuples to the queue. The ones that does not fit are put
+        // on the other queue temperarily
+
+        // unload current queue and see where the elements go.
+        while (true)
+        {
+            // Get a node from current queue pcurr_Q
+            cur_node = pcurr_Q.deq();
+            if (cur_node == null) break;
+            p_elems_curr_Q--;
+
+            // compare cur_node.tuple to lastElem (smallest if asc or largest if desc possible value).
+            if(sortFldType.attrType == AttrType.attrVector100D) {
+                comp_res = TupleUtils.compareTuplesWrtTargetVectorTuple(cur_node.tuple, lastElem, targetTuple, _sort_fld);
+            } else {
+                comp_res = TupleUtils.CompareTupleWithValue(sortFldType, cur_node.tuple, _sort_fld, lastElem);
+            }
+            
+            if ((comp_res < 0 && order.tupleOrder == TupleOrder.Ascending) || (comp_res > 0 && order.tupleOrder == TupleOrder.Descending))
+            {
+                // doesn't fit in current run, put into the other queue
+                try
+                {
+                    pother_Q.enq(cur_node);
+                }
+                catch (UnknowAttrType e)
+                {
+                    throw new SortException(e, "Sort.java: UnknowAttrType caught from Q.enq()");
+                }
+                p_elems_other_Q++;
+            }
+            else
+            {
+                // set lastElem to have the value of the current tuple,
+                // This line needs to be studied carefully on how it affects 100dvector enqueue.
+                // I doubt this matters because when we define the splay priority queues.
+                // We created a new pnode target and new constructors for the Splay priority queues.
+                // We store the target vector in the trees itself.
+                // So no need to worry about updating lastElem here and wether it affects the vector compare functionality.
+                // It is still needed to implement the sort for other datatypes, because comparision happens between 2 operands.
+                // Where as for vector comparision, we have 3 operands. The 2 we are comparing and the target.
+                // Since target participates in all comparisions of an SplayTree, its better to have it as an attribute of the tree
+
+                TupleUtils.SetValue(lastElem, cur_node.tuple, _sort_fld, sortFldType);
+
+                // write tuple to output file for the current run.
+                o_buf.Put(cur_node.tuple);
+            }
+
+            // IF other queue full, SETUP Swap.
+            // if other queue is full, setup necessary heapfile, output buffer and tuple tracker
+            // swap the queues and make this the current queue.
+            if (p_elems_other_Q == max_elems)
+            {
+                // close current run and start next run
+                // keep track of number of tuples in each run.
+                n_tuples[run_num] = (int) o_buf.flush();  // need io_bufs.java
+                run_num++;
+
+                // If run_num reached max number of runs allocated,
+                // double the number of runs. Allocate the respective heapfiles.
+                // each run has its own heapfile.
+                if (run_num == n_tempfiles)
+                {
+                    // create new heapfile array with double the number of heapfiles.
+                    Heapfile[] temp1 = new Heapfile[2 * n_tempfiles];
+
+                    // Copy existing heapfiles into the new array.
+                    for (int i = 0; i < n_tempfiles; i++)
+                    {
+                        temp1[i] = temp_files[i];
+                    }
+
+                    // update the current heapfile array to the new heapfile array
+                    // update the count for number of heapfiles available.
+                    temp_files = temp1;
+                    n_tempfiles *= 2;
+
+                    // Each heapfile has an associated count of number of tuples inside it.
+                    // update the tuple count tracker.
+                    // double its size to allocate new number of heapfiles.
+                    // copy existing tuple counts for each heapfile into it.
+                    int[] temp2 = new int[2 * n_runs];
+                    for (int j = 0; j < n_runs; j++)
+                    {
+                        temp2[j] = n_tuples[j];
+                    }
+                    n_tuples = temp2;
+                    n_runs *= 2;
+                }
+
+                // create new heapfile
+                try
+                {
+                    temp_files[run_num] = new Heapfile(null);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                    throw new SortException(e, "Sort.java: create Heapfile failed");
+                }
+
+                // create an output buffer for the new heapfile.
+                o_buf.init(bufs, _n_pages, tuple_size, temp_files[run_num], false);
+
+                // set the last Elem to be the minimum value for the sort field
+                if (order.tupleOrder == TupleOrder.Ascending)
+                {
+                    try
+                    {
+                        MIN_VAL(lastElem, sortFldType);
+                    }
+                    catch (UnknowAttrType e)
+                    {
+                        throw new SortException(e, "Sort.java: UnknowAttrType caught from MIN_VAL()");
+                    }
+                    catch (Exception e)
+                    {
+                        throw new SortException(e, "MIN_VAL failed");
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        MAX_VAL(lastElem, sortFldType);
+                    }
+                    catch (UnknowAttrType e)
+                    {
+                        throw new SortException(e, "Sort.java: UnknowAttrType caught from MAX_VAL()");
+                    }
+                    catch (Exception e)
+                    {
+                        throw new SortException(e, "MIN_VAL failed");
+                    }
+                }
+
+                // switch the current heap and the other heap
+                pnodeSplayPQ tempQ = pcurr_Q;
+                pcurr_Q = pother_Q;
+                pother_Q = tempQ;
+                int tempelems = p_elems_curr_Q;
+                p_elems_curr_Q = p_elems_other_Q;
+                p_elems_other_Q = tempelems;
+            }
+
+            // now check whether the current queue is empty
+            // for 100dvectors, we unload the current queue above and load it again here.
+            else if (p_elems_curr_Q == 0)
+            {
+                while ((p_elems_curr_Q + p_elems_other_Q) < max_elems)
+                {
+                    try
+                    {
+                        tuple = _am.get_next();  // according to Iterator.java
+                    }
+                    catch (Exception e)
+                    {
+                        throw new SortException(e, "get_next() failed");
+                    }
+
+                    if (tuple == null)
+                    {
+                        break;
+                    }
+                    cur_node = new pnode();
+                    cur_node.tuple = new Tuple(tuple);
+
+                    try
+                    {
+                        pcurr_Q.enq(cur_node);
+                    }
+                    catch (UnknowAttrType e)
+                    {
+                        throw new SortException(e, "Sort.java: UnknowAttrType caught from Q.enq()");
+                    }
+                    p_elems_curr_Q++;
+                }
+            }
+
+            // Check if we are done
+            // For 100D vector case
+            // this shouldn't be 0 unless we done.
+            if (p_elems_curr_Q == 0)
+            {
+                // current queue empty despite our attemps to fill in
+                // indicating no more tuples from input
+                if (p_elems_other_Q == 0)
+                {
+                    // other queue is also empty, no more tuples to write out, done
+                    break; // of the while(true) loop
+                }
+                else
+                {
+                    // generate one more run for all tuples in the other queue
+                    // close current run and start next run
+                    n_tuples[run_num] = (int) o_buf.flush();  // need io_bufs.java
+                    run_num++;
+
+                    // check to see whether need to expand the array
+                    if (run_num == n_tempfiles)
+                    {
+                        Heapfile[] temp1 = new Heapfile[2 * n_tempfiles];
+                        for (int i = 0; i < n_tempfiles; i++)
+                        {
+                            temp1[i] = temp_files[i];
+                        }
+                        temp_files = temp1;
+                        n_tempfiles *= 2;
+
+                        int[] temp2 = new int[2 * n_runs];
+                        for (int j = 0; j < n_runs; j++)
+                        {
+                            temp2[j] = n_tuples[j];
+                        }
+                        n_tuples = temp2;
+                        n_runs *= 2;
+                    }
+
+                    try
+                    {
+                        temp_files[run_num] = new Heapfile(null);
+                    }
+                    catch (Exception e)
+                    {
+                        throw new SortException(e, "Sort.java: create Heapfile failed");
+                    }
+
+                    // need io_bufs.java
+                    o_buf.init(bufs, _n_pages, tuple_size, temp_files[run_num], false);
+
+                    // set the last Elem to be the minimum value for the sort field
+                    if (order.tupleOrder == TupleOrder.Ascending)
+                    {
+                        try
+                        {
+                            MIN_VAL(lastElem, sortFldType);
+                        }
+                        catch (UnknowAttrType e)
+                        {
+                            throw new SortException(e, "Sort.java: UnknowAttrType caught from MIN_VAL()");
+                        }
+                        catch (Exception e)
+                        {
+                            throw new SortException(e, "MIN_VAL failed");
+                        }
+                    }
+                    else
+                    {
+                        try
+                        {
+                            MAX_VAL(lastElem, sortFldType);
+                        }
+                        catch (UnknowAttrType e)
+                        {
+                            throw new SortException(e, "Sort.java: UnknowAttrType caught from MAX_VAL()");
+                        }
+                        catch (Exception e)
+                        {
+                            throw new SortException(e, "MIN_VAL failed");
+                        }
+                    }
+
+                    // switch the current heap and the other heap
+                    pnodeSplayPQ tempQ = pcurr_Q;
+                    pcurr_Q = pother_Q;
+                    pother_Q = tempQ;
+                    int tempelems = p_elems_curr_Q;
+                    p_elems_curr_Q = p_elems_other_Q;
+                    p_elems_other_Q = tempelems;
+                }
+            } // end of if (p_elems_curr_Q == 0)
+        } // end of while (true)
+
+        // close the last run
+        n_tuples[run_num] = (int) o_buf.flush();
+        run_num++;
+        return run_num;
+    }
+
+
+    /**
      * Remove the minimum value among all the runs.
      *
      * @return the minimum tuple removed
@@ -749,6 +1195,9 @@ public class Sort extends Iterator implements GlobalConst
                 Vector100Dtype target_vector,
                 int k_nearest
     ) throws IOException, SortException, InvalidTupleSizeException, InvalidTypeException, FieldNumberOutOfBoundException {
+
+        isRidBased = true;
+
         _in = new AttrType[len_in];
         n_cols = len_in;
         int n_strs = 0;
@@ -860,7 +1309,12 @@ public class Sort extends Iterator implements GlobalConst
         // We use Splay trees as priority queues.
         // Self organizing trees on insert.
         // input - sort_fied number, field attribute type, sort field order.
-
+        try{
+            dataFile = new Heapfile(BatchInsert.DB_DATA_HEAP_FILE_NAME);
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new SortException(e, "Sort.java: Heapfile error");
+        }
         Target = target_vector;
         k = k_nearest;
         targetTuple = new Tuple(tuple_size);
@@ -1035,8 +1489,12 @@ public class Sort extends Iterator implements GlobalConst
             first_time = false;
 
             // generate runs
-            Nruns = generate_runs(max_elems_in_heap, _in[_sort_fld - 1], sortFldLen);
-                  System.out.println("Generated " + Nruns + " runs");
+            if(isRidBased) {
+                Nruns = generate_runs_with_rids(max_elems_in_heap, _in[_sort_fld - 1], sortFldLen);
+            } else {
+                Nruns = generate_runs(max_elems_in_heap, _in[_sort_fld - 1], sortFldLen);
+            }
+            System.out.println("Generated " + Nruns + " runs");
 
             // setup state to perform merge of runs.
             // Open input buffers for all the input file

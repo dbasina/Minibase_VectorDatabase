@@ -1146,7 +1146,7 @@ public class DbmsEntry
         }
     }
 
-    private static boolean indexExists(String relName, int columnId)
+    public static boolean indexExists(String relName, int columnId)
             throws
             Exception
     {

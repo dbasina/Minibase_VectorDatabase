@@ -3,6 +3,7 @@
 package global;
 
 import java.io.*;
+import java.util.Objects;
 
 /**
  * class RID
@@ -78,4 +79,16 @@ public class RID
             return false;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        RID rid = (RID) o;
+        return equals(rid);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(slotNo, pageNo.pid);
+    }
 }

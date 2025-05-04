@@ -71,7 +71,7 @@ public class LSHFIndex
         IntStream.range(0, STATE_TUPLE_PROJ_LIST.length).forEach(i -> STATE_TUPLE_PROJ_LIST[i] = new FldSpec(new RelSpec(RelSpec.outer), i + 1));
     }
 
-    private static final AttrType[] BIN_TUPLE_ATTR_TYPES = new AttrType[2];
+    public static final AttrType[] BIN_TUPLE_ATTR_TYPES = new AttrType[2];
 
     static
     {
@@ -79,7 +79,7 @@ public class LSHFIndex
         BIN_TUPLE_ATTR_TYPES[1] = new AttrType(AttrType.attrInteger);
     }
 
-    private static final FldSpec[] BIN_TUPLE_PROJ_LIST = new FldSpec[BIN_TUPLE_ATTR_TYPES.length];
+    public static final FldSpec[] BIN_TUPLE_PROJ_LIST = new FldSpec[BIN_TUPLE_ATTR_TYPES.length];
 
     static
     {
@@ -412,28 +412,26 @@ public class LSHFIndex
         return unionDump;
     }
 
-    public void deleteRecord(Vector100Dtype vector, RID rid) throws Exception 
+    public void deleteRecord(Vector100Dtype vector, RID dataFileRid) throws Exception
     {
-        String[] hashValues = getAllLayersHash(vector);
-        for (int layer = 0; layer < hashValues.length; layer++)
-        {
-            String hashValue = hashValues[layer];
-            Heapfile heapFile = new Heapfile(generateBinHeapFileName(relationName, layer, attributeColumnNumber, hashValue));
-            FileScan binScan = new FileScan(generateBinHeapFileName(relationName, layer, attributeColumnNumber, hashValue), BIN_TUPLE_ATTR_TYPES, new short[0], (short) BIN_TUPLE_ATTR_TYPES.length, BIN_TUPLE_ATTR_TYPES.length, BIN_TUPLE_PROJ_LIST, null);
-            Tuple binTuple = binScan.get_next();
-            while (binTuple != null)
-            {
-                int pageNo = binTuple.getIntFld(1);
-                int slotNo = binTuple.getIntFld(2);
-                RID currentRID = new RID(new PageId(pageNo), slotNo);
-                if (currentRID.equals(rid))
-                {
-                    heapFile.deleteRecord(currentRID);
-                    break;
+        for(String binName : getBinHeapFileNames(vector)) {
+            Heapfile binHeapFile = new Heapfile(binName);
+            Scan binScan = binHeapFile.openScan();
+            try {
+                RID binRid = new RID();
+                Tuple binTuple;
+
+                while ((binTuple = binScan.getNext(binRid)) != null) {
+                    binTuple.setHdr((short) BIN_TUPLE_ATTR_TYPES.length, BIN_TUPLE_ATTR_TYPES, new short[0]);
+                    if(dataFileRid.equals(new RID(new PageId(binTuple.getIntFld(1)), binTuple.getIntFld(2))))  {
+                        binScan.closescan();
+                        binHeapFile.deleteRecord(binRid);
+                        break;
+                    }
                 }
-                binTuple = binScan.get_next();
+            } catch (Exception e){
+                binScan.closescan();
             }
-            binScan.close();
         }
     }
 
@@ -471,6 +469,10 @@ public class LSHFIndex
 
     public static String getLshUnionDumpFileName(String relationName) {
         return relationName + UNION_DUMP_HEAP_FILE_NAME_SUFFIX;
+    }
+
+    public int getAttributeColumnNumber() {
+        return attributeColumnNumber;
     }
 
 }

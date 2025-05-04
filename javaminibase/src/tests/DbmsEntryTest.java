@@ -3,9 +3,10 @@ package tests;
 import LSHFIndex.LSHFIndex;
 import btree.*;
 import global.AttrType;
+import global.PageId;
+import global.RID;
 import global.Vector100Dtype;
-import heap.Heapfile;
-import heap.Tuple;
+import heap.*;
 import iterator.*;
 import scripts.phaseThree.DbmsEntry;
 import scripts.phaseThree.SupportedCommands;
@@ -18,10 +19,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.function.*;
 
 public class DbmsEntryTest {
     private static final HashSet<String> STRINGS_IN_75000_DATASET = new HashSet<>();
@@ -1034,19 +1032,171 @@ public class DbmsEntryTest {
         String dbNameOne = "testDb";
         String sampleDataRelation = "relSample";
 
+        // Basic Sanity
         Files.deleteIfExists(Paths.get(getDbPath(dbNameOne)));
 
         DbmsEntry.handleDbOpenCommand(new String[] { SupportedCommands.OPEN_DB.getCommand(), dbNameOne });
 
         DbmsEntry.handleBatchCreateCommand(new String[] { SupportedCommands.BATCH_CREATE.getCommand(), "javaminibase/src/tests/scriptTestDataFiles/sample_data_1.txt", sampleDataRelation });
         if(new Heapfile(DbmsEntry.getRelDataFileName(sampleDataRelation)).getRecCnt() != 368)
-            throw new RuntimeException("FAIL - testBatchDelete - Invalid record counts after batch delete!");
+            throw new RuntimeException("FAIL - testBatchDelete - Invalid record counts after batch create!");
 
         DbmsEntry.handleBatchDeleteCommand(new String[] { SupportedCommands.BATCH_DELETE.getCommand(), "javaminibase/src/tests/scriptTestDataFiles/queryDataFiles/delete_1.txt", sampleDataRelation });
         // First 4 rows in delete_1.txt belongs to row 1, 5th row belongs to row 2, 6th row belongs to row 3 in relation table.
         // So, total 3 rows should be deleted.
         if(new Heapfile(DbmsEntry.getRelDataFileName(sampleDataRelation)).getRecCnt() != 365)
             throw new RuntimeException("FAIL - testBatchDelete - Invalid record counts after batch delete! " + new Heapfile(DbmsEntry.getRelDataFileName(sampleDataRelation)).getRecCnt());
+
+
+        final Vector100Dtype vector100DtypeToDelete = Vector100Dtype.buildVector100Dtype("2953 -7293 6659 -3635 2616 -7465 170 -5962 -516 6420 -7213 5033 -9434 -9174 8325 8329 5312 -7075 4812 -4414 9663 -2837 2193 6893 -1074 1543 5351 -4574 -6895 -1077 9329 9130 -9894 484 -9502 -1022 6554 -7526 5624 8014 -6865 6815 -8848 2741 -6931 3679 -9954 3969 638 -1646 -9259 -2730 5991 -5185 -7873 -8766 -5403 2598 43 -3847 -4358 2432 9913 -4623 3516 8388 -4150 207 -622 -6289 3285 -2719 5844 5273 -378 1294 -3201 -5814 -8690 8558 -6512 4446 2078 5884 4948 4354 -7171 9677 -7311 -1666 1190 -51 4967 -6711 -6118 -4360 -2391 29 -7034 -9405".split(" "));
+        createFileForTestInput(QUERY_SPECIFICATION_FILE_PATH, "4\n" +
+                "1 2 3 4\n" +
+                "1 1\n" +
+                "2 51.58\n" +
+                "3 WEqEfIcB\n" +
+                "4 2953 -7293 6659 -3635 2616 -7465 170 -5962 -516 6420 -7213 5033 -9434 -9174 8325 8329 5312 -7075 4812 -4414 9663 -2837 2193 6893 -1074 1543 5351 -4574 -6895 -1077 9329 9130 -9894 484 -9502 -1022 6554 -7526 5624 8014 -6865 6815 -8848 2741 -6931 3679 -9954 3969 638 -1646 -9259 -2730 5991 -5185 -7873 -8766 -5403 2598 43 -3847 -4358 2432 9913 -4623 3516 8388 -4150 207 -622 -6289 3285 -2719 5844 5273 -378 1294 -3201 -5814 -8690 8558 -6512 4446 2078 5884 4948 4354 -7171 9677 -7311 -1666 1190 -51 4967 -6711 -6118 -4360 -2391 29 -7034 -9405"
+        );
+
+        Function<String, HashSet<RID>> validateDataFile = (relName) -> {
+            HashSet<RID> seenRids = new HashSet<>();
+            try {
+                Heapfile relHeapFile = new Heapfile(DbmsEntry.getRelDataFileName(relName));
+                AttrType[] attrTypes = DbmsEntry.getRelationAttrTypes(relName);
+                short[] relStringLengths = TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes);
+
+                Scan scan = relHeapFile.openScan();
+
+                while(true) {
+                    RID rid = new RID();
+                    Tuple tuple = scan.getNext(rid);
+                    if(tuple == null)
+                        break;
+                    seenRids.add(rid);
+
+                    tuple.setHdr((short) attrTypes.length, attrTypes, relStringLengths);
+                    if((tuple.getIntFld(1) == 1) ||
+                            (tuple.getFloFld(2) == 51.58f) ||
+                            ("WEqEfIcB".equals(tuple.getStrFld(3))) ||
+                            (vector100DtypeToDelete.equals(tuple.get100DVectFld(4)))
+                    )
+                        throw new RuntimeException("FAIL - testBatchDelete - Data file has a row with a value that was supposed to be deleted!");
+                }
+                scan.closescan();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            return seenRids;
+        };
+
+        BiConsumer<String, HashSet<RID>> validateLshHasRids = (relName, expectedRids) -> {
+          try {
+              AttrType[] attrTypes = DbmsEntry.getRelationAttrTypes(relName);
+              LSHFIndex index = new LSHFIndex(relName, 4);
+
+              // Get bin names for each layer
+              HashSet<String> layer1UniqueBins = new HashSet<>();
+              HashSet<String> layer2UniqueBins = new HashSet<>();
+
+              FileScan fileScan = new FileScan(DbmsEntry.getRelDataFileName(relName),
+                      attrTypes,
+                      TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes),
+                      (short) attrTypes.length,
+                      1,
+                      new FldSpec[] { new FldSpec(new RelSpec(RelSpec.outer), 4) },
+                      null);
+
+              Tuple outTuple = fileScan.get_next();
+              while (outTuple != null) {
+                  List<String> binNames = index.getBinHeapFileNames(outTuple.get100DVectFld(1));
+                  layer1UniqueBins.add(binNames.get(0));
+                  layer2UniqueBins.add(binNames.get(1));
+
+                  outTuple = fileScan.get_next();
+              }
+              fileScan.close();
+
+              // Read bins of each layer to get data file RIDs
+              HashSet<RID> layer1Rids = new HashSet<>();
+              for(String binName : layer1UniqueBins) {
+                  FileScan binScan = new FileScan(binName, LSHFIndex.BIN_TUPLE_ATTR_TYPES, new short[0], (short) LSHFIndex.BIN_TUPLE_ATTR_TYPES.length, LSHFIndex.BIN_TUPLE_ATTR_TYPES.length, LSHFIndex.BIN_TUPLE_PROJ_LIST, null);
+                  Tuple binTuple = binScan.get_next();
+                  while (binTuple != null) {
+                      layer1Rids.add(new RID(new PageId(binTuple.getIntFld(1)), binTuple.getIntFld(2)));
+                      binTuple = binScan.get_next();
+                  }
+                  binScan.close();
+              }
+
+              if(! expectedRids.equals(layer1Rids))
+                  throw new RuntimeException("FAIL - testBatchDelete - Mismatch between data file RIDs and RIDs in LSHIndex layer 1 bins!");
+
+              HashSet<RID> layer2Rids = new HashSet<>();
+              for(String binName : layer2UniqueBins) {
+                  FileScan binScan = new FileScan(binName, LSHFIndex.BIN_TUPLE_ATTR_TYPES, new short[0], (short) LSHFIndex.BIN_TUPLE_ATTR_TYPES.length, LSHFIndex.BIN_TUPLE_ATTR_TYPES.length, LSHFIndex.BIN_TUPLE_PROJ_LIST, null);
+                  Tuple binTuple = binScan.get_next();
+                  while (binTuple != null) {
+                      layer2Rids.add(new RID(new PageId(binTuple.getIntFld(1)), binTuple.getIntFld(2)));
+                      binTuple = binScan.get_next();
+                  }
+                  binScan.close();
+              }
+              if(! expectedRids.equals(layer2Rids))
+                  throw new RuntimeException("FAIL - testBatchDelete - Mismatch between data file RIDs and RIDs in LSHIndex layer 2 bins!");
+
+          } catch (Exception e) {
+              throw new RuntimeException(e);
+          }
+        };
+
+        BiConsumer<BTreeFile, HashSet<RID>> validateBtreeHasRids = (btreeFile, expectedRids) -> {
+            HashSet<RID> ridsInBtree = new HashSet<>();
+            try {
+                BTFileScan bTreeFileScan = btreeFile.new_scan(null, null);
+                KeyDataEntry entry = bTreeFileScan.get_next();
+                while(entry != null) {
+                    ridsInBtree.add(((LeafData) entry.data).getData());
+                    entry = bTreeFileScan.get_next();
+                }
+                bTreeFileScan.DestroyBTreeFileScan();
+                btreeFile.close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            if(! expectedRids.equals(ridsInBtree))
+                throw new RuntimeException("FAIL - testBatchDelete - Mismatch between data file RIDs and RIDs in bTree!");
+        };
+
+        // No Indices
+        final String relName1 = "noIndexBatchDelete";
+        DbmsEntry.handleDbOpenCommand(new String[] { SupportedCommands.OPEN_DB.getCommand(), dbNameOne });
+        DbmsEntry.handleBatchCreateCommand(new String[] { SupportedCommands.BATCH_CREATE.getCommand(), "javaminibase/src/tests/scriptTestDataFiles/sample50_000.txt", relName1 });
+        DbmsEntry.handleBatchDeleteCommand(new String[] { SupportedCommands.BATCH_DELETE.getCommand(), QUERY_SPECIFICATION_FILE_PATH, relName1 });
+        validateDataFile.apply(relName1);
+
+        // LSH Indexed
+        final String relName2 = "lshIndexBatchDelete";
+        DbmsEntry.handleBatchCreateCommand(new String[] { SupportedCommands.BATCH_CREATE.getCommand(), "javaminibase/src/tests/scriptTestDataFiles/sample50_000.txt", relName2 });
+        DbmsEntry.handleIndexCreateCommand(new String[] { SupportedCommands.CREATE_INDEX.getCommand(), relName2, "4", "2", "6"});
+        DbmsEntry.handleBatchDeleteCommand(new String[] { SupportedCommands.BATCH_DELETE.getCommand(), QUERY_SPECIFICATION_FILE_PATH, relName2 });
+        HashSet<RID> ridsInDataFile = validateDataFile.apply(relName2);
+        validateLshHasRids.accept(relName2, ridsInDataFile);
+
+        DbmsEntry.handleDbCloseCommand();
+        DbmsEntry.handleDbOpenCommand(new String[] { SupportedCommands.OPEN_DB.getCommand(), dbNameOne });
+
+        // LSH + BTree Indexed
+        final String relName3 = "lshBtreeIndexBatchDelete";
+        DbmsEntry.handleBatchCreateCommand(new String[] { SupportedCommands.BATCH_CREATE.getCommand(), "javaminibase/src/tests/scriptTestDataFiles/sample50_000.txt", relName3 });
+        DbmsEntry.handleIndexCreateCommand(new String[] { SupportedCommands.CREATE_INDEX.getCommand(), relName3, "4", "2", "6"});
+        DbmsEntry.handleIndexCreateCommand(new String[] { SupportedCommands.CREATE_INDEX.getCommand(), relName3, "1"});
+        DbmsEntry.handleIndexCreateCommand(new String[] { SupportedCommands.CREATE_INDEX.getCommand(), relName3, "2"});
+        DbmsEntry.handleIndexCreateCommand(new String[] { SupportedCommands.CREATE_INDEX.getCommand(), relName3, "3"});
+        DbmsEntry.handleBatchDeleteCommand(new String[] { SupportedCommands.BATCH_DELETE.getCommand(), QUERY_SPECIFICATION_FILE_PATH, relName3 });
+        ridsInDataFile = validateDataFile.apply(relName3);
+        validateLshHasRids.accept(relName3, ridsInDataFile);
+        validateBtreeHasRids.accept(new BTreeFile(DbmsEntry.getBTreeFileName(relName3, 1)), ridsInDataFile);
+        validateBtreeHasRids.accept(new BTreeFile(DbmsEntry.getBTreeFileName(relName3, 2)), ridsInDataFile);
+        validateBtreeHasRids.accept(new BTreeFile(DbmsEntry.getBTreeFileName(relName3, 3)), ridsInDataFile);
 
         DbmsEntry.handleDbCloseCommand();
         System.out.println("PASS - testBatchDelete\n\n");

@@ -410,6 +410,7 @@ public class BufMgr implements GlobalConst
      */
     private Replacer replacer;
 
+    public static final String SAFE_PAGE_PINNED_EXCEPTION_MESSAGE = "BUFMGR: PAGE_PINNED. Safe.";
 
     /**
      * Factor out the common code for the two versions of Flush
@@ -481,7 +482,7 @@ public class BufMgr implements GlobalConst
         if (all_pages != 0)
         {
             if (unpinned != 0)
-                throw new PagePinnedException(null, "BUFMGR: PAGE_PINNED.");
+                throw new PagePinnedException(null, SAFE_PAGE_PINNED_EXCEPTION_MESSAGE);
         }
     }
 

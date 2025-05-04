@@ -3,9 +3,12 @@ package iterator;
 
 import heap.*;
 import global.*;
+import scripts.phaseThree.DbmsEntry;
 
 import java.io.*;
 import java.lang.*;
+import java.util.Arrays;
+import java.util.stream.IntStream;
 
 /**
  * some useful method when processing Tuple
@@ -413,6 +416,32 @@ public class TupleUtils
             return -1;
         else
             return 1;
+    }
+
+    public static short[] getStrFieldLengthsForConstantStrSizes(AttrType[] attrTypes) {
+        int strFieldCount = (int) Arrays.stream(attrTypes).filter(t -> t.attrType == AttrType.attrString).count();
+        short[] strLengths = new short[strFieldCount];
+        IntStream.range(0, strFieldCount).forEach(i -> strLengths[i] = DbmsEntry.MAX_STRING_LENGTH);
+        return strLengths;
+    }
+
+    public static void printFieldsFromTuple(Tuple t, AttrType[] attrTypes, int[] outputFieldNumbers) throws Exception{
+        for(int fieldNumber : outputFieldNumbers) {
+            switch (attrTypes[fieldNumber-1].attrType) {
+                case AttrType.attrInteger:
+                    System.out.println("" + t.getIntFld(fieldNumber));
+                    break;
+                case AttrType.attrString:
+                    System.out.println(t.getStrFld(fieldNumber));
+                    break;
+                case AttrType.attrReal:
+                    System.out.println("" + t.getFloFld(fieldNumber));
+                    break;
+                case AttrType.attrVector100D:
+                    System.out.println(t.get100DVectFld(fieldNumber));
+                    break;
+            }
+        }
     }
 }
 

@@ -46,26 +46,20 @@ public class BT implements GlobalConst
      * @param key1 the first key to compare. Input parameter.
      * @param key2 the second key to compare. Input parameter.
      * @return return negative if key1 less than key2; positive if key1 bigger
-     * than  key2;
-     * 0 if key1=key2.
+     *         than key2;
+     *         0 if key1=key2.
      * @throws KeyNotMatchException key is not IntegerKey or StringKey class
      */
     public final static int keyCompare(KeyClass key1, KeyClass key2)
-            throws KeyNotMatchException
-    {
-        if ((key1 instanceof IntegerKey) && (key2 instanceof IntegerKey))
-        {
+            throws KeyNotMatchException {
+        if ((key1 instanceof IntegerKey) && (key2 instanceof IntegerKey)) {
 
-            return (((IntegerKey) key1).getKey()).intValue()
-                    - (((IntegerKey) key2).getKey()).intValue();
-        }
-        else if ((key1 instanceof StringKey) && (key2 instanceof StringKey))
-        {
+            return (((IntegerKey) key1).getKey()).intValue() - (((IntegerKey) key2).getKey()).intValue();
+        } else if ((key1 instanceof StringKey) && (key2 instanceof StringKey)) {
             return ((StringKey) key1).getKey().compareTo(((StringKey) key2).getKey());
-        }
-
-        else
-        {
+        } else if ((key1 instanceof RealKey) && (key2 instanceof RealKey)) {
+            return ((RealKey) key1).getKey().compareTo(((RealKey) key2).getKey());
+        } else {
             throw new KeyNotMatchException(null, "key types do not match");
         }
     }
@@ -77,24 +71,24 @@ public class BT implements GlobalConst
      * @param key specify the key whose length will be calculated.
      *            Input parameter.
      * @return return the length of the key
-     * @throws KeyNotMatchException key is neither StringKey nor  IntegerKey
-     * @throws IOException          error  from the lower layer
+     * @throws KeyNotMatchException key is neither StringKey nor IntegerKey
+     * @throws IOException          error from the lower layer
      */
     protected final static int getKeyLength(KeyClass key)
             throws KeyNotMatchException,
-                   IOException
-    {
-        if (key instanceof StringKey)
-        {
-
+            IOException {
+        if (key instanceof StringKey) {
             OutputStream out = new ByteArrayOutputStream();
             DataOutputStream outstr = new DataOutputStream(out);
             outstr.writeUTF(((StringKey) key).getKey());
             return outstr.size();
-        }
-        else if (key instanceof IntegerKey)
+        } else if (key instanceof IntegerKey){
             return 4;
-        else throw new KeyNotMatchException(null, "key types do not match");
+        } else if (key instanceof RealKey){
+            return 4;
+        }
+        else
+            throw new KeyNotMatchException(null, "key types do not match");
     }
 
 
@@ -150,57 +144,47 @@ public class BT implements GlobalConst
      * @param length   The length of (key, data) in byte array "from".
      *                 Input parameter.
      * @return return a KeyDataEntry object
-     * @throws KeyNotMatchException  key is neither StringKey nor  IntegerKey
+     * @throws KeyNotMatchException  key is neither StringKey nor IntegerKey
      * @throws NodeNotMatchException nodeType is neither NodeType.LEAF
      *                               nor NodeType.INDEX.
      * @throws ConvertException      error from the lower layer
      */
     protected final static KeyDataEntry getEntryFromBytes(byte[] from, int offset,
-                                                          int length, int keyType, short nodeType)
+            int length, int keyType, short nodeType)
             throws KeyNotMatchException,
-                   NodeNotMatchException,
-                   ConvertException
-    {
+            NodeNotMatchException,
+            ConvertException {
         KeyClass key;
         DataClass data;
         int n;
-        try
-        {
+        try {
 
-            if (nodeType == NodeType.INDEX)
-            {
+            if (nodeType == NodeType.INDEX) {
                 n = 4;
                 data = new IndexData(Convert.getIntValue(offset + length - 4, from));
-            }
-            else if (nodeType == NodeType.LEAF)
-            {
+            } else if (nodeType == NodeType.LEAF) {
                 n = 8;
                 RID rid = new RID();
                 rid.slotNo = Convert.getIntValue(offset + length - 8, from);
                 rid.pageNo = new PageId();
                 rid.pageNo.pid = Convert.getIntValue(offset + length - 4, from);
                 data = new LeafData(rid);
-            }
-            else throw new NodeNotMatchException(null, "node types do not match");
+            } else
+                throw new NodeNotMatchException(null, "node types do not match");
 
-            if (keyType == AttrType.attrInteger)
-            {
-                key = new IntegerKey(Integer.valueOf
-                        (Convert.getIntValue(offset, from)));
-            }
-            else if (keyType == AttrType.attrString)
-            {
-                //System.out.println(" offset  "+ offset + "  " + length + "  "+n);
+            if (keyType == AttrType.attrInteger) {
+                key = new IntegerKey(Integer.valueOf(Convert.getIntValue(offset, from)));
+            } else if (keyType == AttrType.attrString) {
+                // System.out.println(" offset "+ offset + " " + length + " "+n);
                 key = new StringKey(Convert.getStrValue(offset, from, length - n));
-            }
-            else
+            } else if (keyType == AttrType.attrReal) {
+                key = new RealKey(Convert.getFloValue(offset, from));
+            } else
                 throw new KeyNotMatchException(null, "key types do not match");
 
             return new KeyDataEntry(key, data);
 
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             throw new ConvertException(e, "convert faile");
         }
     }
@@ -209,21 +193,19 @@ public class BT implements GlobalConst
     /**
      * It convert a keyDataEntry to byte[].
      *
-     * @param entry specify  the data entry. Input parameter.
+     * @param entry specify the data entry. Input parameter.
      * @return return a byte array with size equal to the size of (key,data).
-     * @throws KeyNotMatchException  entry.key is neither StringKey nor  IntegerKey
+     * @throws KeyNotMatchException  entry.key is neither StringKey nor IntegerKey
      * @throws NodeNotMatchException entry.data is neither LeafData nor IndexData
      * @throws ConvertException      error from the lower layer
      */
     protected final static byte[] getBytesFromEntry(KeyDataEntry entry)
             throws KeyNotMatchException,
-                   NodeNotMatchException,
-                   ConvertException
-    {
+            NodeNotMatchException,
+            ConvertException {
         byte[] data;
         int n, m;
-        try
-        {
+        try {
             n = getKeyLength(entry.key);
             m = n;
             if (entry.data instanceof IndexData)
@@ -233,36 +215,26 @@ public class BT implements GlobalConst
 
             data = new byte[n];
 
-            if (entry.key instanceof IntegerKey)
-            {
-                Convert.setIntValue(((IntegerKey) entry.key).getKey().intValue(),
-                        0, data);
+            if (entry.key instanceof IntegerKey) {
+                Convert.setIntValue(((IntegerKey) entry.key).getKey().intValue(), 0, data);
+            } else if (entry.key instanceof StringKey) {
+                Convert.setStrValue(((StringKey) entry.key).getKey(), 0, data);
+            } else if (entry.key instanceof RealKey) {
+                Convert.setFloValue(((RealKey) entry.key).getKey(), 0, data);
             }
-            else if (entry.key instanceof StringKey)
-            {
-                Convert.setStrValue(((StringKey) entry.key).getKey(),
-                        0, data);
-            }
-            else throw new KeyNotMatchException(null, "key types do not match");
+            else
+                throw new KeyNotMatchException(null, "key types do not match");
 
-            if (entry.data instanceof IndexData)
-            {
-                Convert.setIntValue(((IndexData) entry.data).getData().pid,
-                        m, data);
-            }
-            else if (entry.data instanceof LeafData)
-            {
-                Convert.setIntValue(((LeafData) entry.data).getData().slotNo,
-                        m, data);
-                Convert.setIntValue(((LeafData) entry.data).getData().pageNo.pid,
-                        m + 4, data);
+            if (entry.data instanceof IndexData) {
+                Convert.setIntValue(((IndexData) entry.data).getData().pid, m, data);
+            } else if (entry.data instanceof LeafData) {
+                Convert.setIntValue(((LeafData) entry.data).getData().slotNo, m, data);
+                Convert.setIntValue(((LeafData) entry.data).getData().pageNo.pid, m + 4, data);
 
-            }
-            else throw new NodeNotMatchException(null, "node types do not match");
+            } else
+                throw new NodeNotMatchException(null, "node types do not match");
             return data;
-        }
-        catch (IOException e)
-        {
+        } catch (IOException e) {
             throw new ConvertException(e, "convert failed");
         }
     }
@@ -315,6 +287,9 @@ public class BT implements GlobalConst
                 if (keyType == AttrType.attrString)
                     System.out.println(i + " (key, pageId):   (" +
                             (StringKey) entry.key + ",  " + (IndexData) entry.data + " )");
+                if (keyType == AttrType.attrReal)
+                    System.out.println(i + " (key, pageId):   (" +
+                            (RealKey) entry.key + ",  " + (IndexData) entry.data + " )");
 
                 i++;
             }
@@ -342,6 +317,9 @@ public class BT implements GlobalConst
                 if (keyType == AttrType.attrString)
                     System.out.println(i + " (key, [pageNo, slotNo]):   (" +
                             (StringKey) entry.key + ",  " + (LeafData) entry.data);
+                if (keyType == AttrType.attrReal)
+                    System.out.println(i + " (key, [pageNo, slotNo]):   (" +
+                            (RealKey) entry.key + ",  " + (LeafData) entry.data + " )");
 
                 i++;
             }

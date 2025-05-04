@@ -149,7 +149,7 @@ public class BatchInsert implements GlobalConst
         // init it's LSHF index with num_hashes and num_layers
         final LSHFIndex[] lshfIndices = new LSHFIndex[vectorFieldNumbers.size()];
         for(int i=0; i < vectorFieldNumbers.size(); i++)
-            lshfIndices[i] = new LSHFIndex(num_layers, bin_length, num_hashes,vectorFieldNumbers.get(i));
+            lshfIndices[i] = new LSHFIndex("",num_layers, bin_length, num_hashes,vectorFieldNumbers.get(i));
 
         while (true)
         {
@@ -223,7 +223,7 @@ public class BatchInsert implements GlobalConst
 //        runs. I am not sure why the Exception is raised and why this suppresses it
         System.out.println("DB Creation Complete. Running sample query...");
         createTempQueryAndTargetFiles(vectorFieldNumbers.get(0));
-        Query.main(new String[]{database_name, TEMP_QUERY_FILE_NAME, "N", String.valueOf(DB_SIZE_IN_PAGES)});
+//        Query.main(new String[]{database_name, TEMP_QUERY_FILE_NAME, "N", String.valueOf(DB_SIZE_IN_PAGES)});
         deleteTempQueryAndTargetFiles();
     }
 

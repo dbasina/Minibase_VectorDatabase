@@ -429,6 +429,13 @@ public class BTreeFile extends IndexFile
                 throw new KeyNotMatchException(null, "");
             }
         }
+        else if (key instanceof RealKey)
+        {
+            if (headerPage.get_keyType() != AttrType.attrReal)
+            {
+                throw new KeyNotMatchException(null, "");
+            }
+        }
         else
             throw new KeyNotMatchException(null, "");
 

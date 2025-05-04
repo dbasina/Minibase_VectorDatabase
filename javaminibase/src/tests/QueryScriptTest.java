@@ -28,7 +28,7 @@ public class QueryScriptTest {
     public static void main(String[] args) throws Exception {
 //        Pick 1) or 2). Comment out the other
 //        1) Custom test
-        Query.main(new String[]{BatchInsertScriptTest.DB_NAME, QUERY_SPECIFICATION_FILE_PATH, "N", NUM_BUFFERS});
+//        Query.main(new String[]{BatchInsertScriptTest.DB_NAME, QUERY_SPECIFICATION_FILE_PATH, "N", NUM_BUFFERS});
 
 //        2) Predefined Tests
 //        Query.restartDb(BatchInsertScriptTest.DB_NAME, Integer.parseInt(NUM_BUFFERS));
@@ -49,7 +49,7 @@ public class QueryScriptTest {
         QUERY_SPECIFICATION_FILE_PATH = "./javaminibase/src/tests/scriptTestDataFiles/queryDataFiles/nquery1.txt";
         int nnAsked = 5;
 
-        Heapfile unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
+        Heapfile unionDumpFile = null;
         unionDumpFile.deleteFile();
 
         int[] outputFieldNumbers = new int[]{1,2};
@@ -59,13 +59,13 @@ public class QueryScriptTest {
         Vector100Dtype targetVector = Query.read_target_vector("./javaminibase/src/tests/scriptTestDataFiles/queryDataFiles/target1.txt");
 
         NNIndexScan scan = new NNIndexScan(
-                null, null, null, Query.attrTypes, Query.strLengths, Query.numAttributes, outputFieldNumbers.length,
+                null, null, null, Query.attrTypes, Query.strLengths, 0, outputFieldNumbers.length,
                 projList, null, 2, targetVector, nnAsked
         );
 
         Tuple t = scan.get_next();
 
-        unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
+//        unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
         if(unionDumpFile.getRecCnt() != 0) {
             scan.close();
             throw new RuntimeException("FAIL - testNoIndexNnSearch - UnionDump file should be empty as no index was used!");
@@ -90,7 +90,7 @@ public class QueryScriptTest {
         QUERY_SPECIFICATION_FILE_PATH = "./javaminibase/src/tests/scriptTestDataFiles/queryDataFiles/rquery1.txt";
         int distance = 1;
 
-        Heapfile unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
+        Heapfile unionDumpFile = null;
         unionDumpFile.deleteFile();
 
         int[] outputFieldNumbers = new int[]{1,2};
@@ -105,13 +105,13 @@ public class QueryScriptTest {
 
         RSIndexScan scan = new RSIndexScan(
                 null,
-                null, null, Query.attrTypes, Query.strLengths, Query.numAttributes, outputFieldNumbers.length, projList, null,
+                null, null, Query.attrTypes, Query.strLengths, 0, outputFieldNumbers.length, projList, null,
                 2, targetVector, distance
         );
 
         Tuple t = scan.get_next();
 
-        unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
+        unionDumpFile = null;
         if(unionDumpFile.getRecCnt() != 0) {
             scan.close();
             throw new RuntimeException("FAIL - testNoIndexRsSearch - UnionDump file should be empty as no index was used!");
@@ -144,13 +144,13 @@ public class QueryScriptTest {
         Vector100Dtype targetVector = Query.read_target_vector("./javaminibase/src/tests/scriptTestDataFiles/queryDataFiles/target1.txt");
 
         NNIndexScan scan = new NNIndexScan(
-                new IndexType(IndexType.Lsh), null, null, Query.attrTypes, Query.strLengths, Query.numAttributes, outputFieldNumbers.length,
+                new IndexType(IndexType.Lsh), null, null, Query.attrTypes, Query.strLengths, 0, outputFieldNumbers.length,
                 projList, null, 2, targetVector, nnAsked
         );
 
         Tuple t = scan.get_next();
 
-        Heapfile unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
+        Heapfile unionDumpFile = null;
         if(unionDumpFile.getRecCnt() == 0) {
             scan.close();
             throw new RuntimeException("FAIL - testWithIndexNnScan - UnionDump file should not be empty as index was used!");
@@ -186,13 +186,13 @@ public class QueryScriptTest {
         targetTuple.set100DVectFld(1, targetVector);
 
         RSIndexScan scan = new RSIndexScan(
-                new IndexType(IndexType.Lsh), null, null, Query.attrTypes, Query.strLengths, Query.numAttributes,
+                new IndexType(IndexType.Lsh), null, null, Query.attrTypes, Query.strLengths, 0,
                 outputFieldNumbers.length, projList, null, 2, targetVector, distance
         );
 
         Tuple t = scan.get_next();
 
-        Heapfile unionDumpFile = new Heapfile(LSHFIndex.UNION_DUMP_HEAP_FILE_NAME);
+        Heapfile unionDumpFile = null;
         if(unionDumpFile.getRecCnt() == 0) {
             scan.close();
             throw new RuntimeException("FAIL - testWithIndexRsScan - UnionDump file should not be empty as index was used!");

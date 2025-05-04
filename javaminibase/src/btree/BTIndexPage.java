@@ -32,7 +32,7 @@ public class BTIndexPage extends BTSortedPage
      *
      * @param pageno  Input parameter. To specify which page number the
      *                BTIndexPage will correspond to.
-     * @param keyType either AttrType.attrInteger or AttrType.attrString.
+     * @param keyType either AttrType.attrInteger or AttrType.attrString or AttrType.attrReal.
      *                Input parameter.
      * @throws IOException            error from the lower layer
      * @throws ConstructPageException error when BTIndexpage constructor
@@ -51,7 +51,7 @@ public class BTIndexPage extends BTSortedPage
      *
      * @param page    input parameter. To specify which page  the
      *                BTIndexPage will correspond to.
-     * @param keyType either AttrType.attrInteger or AttrType.attrString.
+     * @param keyType either AttrType.attrInteger or AttrType.attrString or AttrType.attrReal.
      *                Input parameter.
      * @throws IOException            error from the lower layer
      * @throws ConstructPageException error when BTIndexpage constructor
@@ -66,7 +66,7 @@ public class BTIndexPage extends BTSortedPage
 
     /* new a page, associate the BTIndexPage instance with the Page instance,
      * also it sets the type of node to be NodeType.INDEX.
-     *@param keyType either AttrType.attrInteger or AttrType.attrString.
+     *@param keyType either AttrType.attrInteger or AttrType.attrString or AttrType.attrReal.
      *  Input parameter.
      *@exception IOException  error from the lower layer
      *@exception ConstructPageException error when BTIndexpage constructor

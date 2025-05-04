@@ -5,8 +5,8 @@ import global.*;
 import heap.*;
 import iterator.*;
 import scripts.Query;
-import scripts.ScriptMetrics;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,7 +22,7 @@ import java.util.stream.IntStream;
  */
 public class LSHFIndex
 {
-
+    private String relationName;
     private int numLayers;
     private int noOfHashFunctionsPerLayer;
     private int attributeColumnNumber;
@@ -34,9 +34,9 @@ public class LSHFIndex
     private static final String LAYER_STATE_HEAPFILE_NAME = "LayerState";
     private static final String LAYER_METADATA_HEAPFILE_NAME = "LayerMetaData";
 
-    public static final String UNION_DUMP_HEAP_FILE_NAME = "unionDump";
+    public static final String UNION_DUMP_HEAP_FILE_NAME_SUFFIX = "unionDump";
     public static final String RID_DUMP_HEAP_FILE_NAME = "ridDump";
-    public  static final String CLEAN_RID_DUMP_HEAP_FILE_NAME = "cleanRidDump";
+    public static final String CLEAN_RID_DUMP_HEAP_FILE_NAME = "cleanRidDump";
 
     private static final AttrType[] META_TUPLE_ATTR_TYPES = new AttrType[3];
 
@@ -117,7 +117,7 @@ public class LSHFIndex
      * @param binLength             bin length
      * @param hashFunctionsPerLayer No of hash functions per layer. Input parameter.
      */
-    public LSHFIndex(int Layers, int binLength, int hashFunctionsPerLayer, int attributeColumnNumber)
+    public LSHFIndex(String relName, int Layers, int binLength, int hashFunctionsPerLayer, int attributeColumnNumber)
             throws
             HFDiskMgrException,
             HFException,
@@ -131,6 +131,7 @@ public class LSHFIndex
 
     {
         // Meta Data
+        this.relationName = relName;
         this.attributeColumnNumber = attributeColumnNumber;
         this.numLayers = Layers;
         this.binLength = binLength;
@@ -145,7 +146,7 @@ public class LSHFIndex
         }
 
         // Store Layer States to disk
-        Heapfile LayerState = new Heapfile(LAYER_STATE_HEAPFILE_NAME+attributeColumnNumber);
+        Heapfile LayerState = new Heapfile(getLSHFIndexLayerStateFileName(this.relationName, attributeColumnNumber));
 
         // States to store for each Layer.
         // int: LayerNumber, int: HashNumber, 100DVector: HashRandom_Vector, int: HashShift
@@ -175,7 +176,7 @@ public class LSHFIndex
 
         // Now we store layer meta data to another heap file layerMetaData
         // No. Layers, No. Hashes per layer, Bin width.
-        Heapfile LayerMetaData = new Heapfile(LAYER_METADATA_HEAPFILE_NAME+attributeColumnNumber);
+        Heapfile LayerMetaData = new Heapfile(getLSHFIndexLayerMetaDataFileName(this.relationName, attributeColumnNumber));
         Tuple temp2 = new Tuple();
 
         temp2.setHdr((short) META_TUPLE_ATTR_TYPES.length, META_TUPLE_ATTR_TYPES, new short[0]);
@@ -197,7 +198,7 @@ public class LSHFIndex
      * <p>
      * This constructor is to restore an existing LSHF index with its randomized vectors and shifts.
      */
-    public LSHFIndex(int attributeColumnNumber)
+    public LSHFIndex(String relName, int attributeColumnNumber)
             throws
             InvalidTupleSizeException,
             IOException,
@@ -215,9 +216,10 @@ public class LSHFIndex
             JoinsException,
             InvalidTypeException
     {
+        this.relationName = relName;
         this.attributeColumnNumber = attributeColumnNumber;
 
-        FileScan metaScan = new FileScan(LAYER_METADATA_HEAPFILE_NAME+attributeColumnNumber,
+        FileScan metaScan = new FileScan(getLSHFIndexLayerMetaDataFileName(this.relationName, attributeColumnNumber),
                 META_TUPLE_ATTR_TYPES,
                 new short[0],
                 (short) META_TUPLE_ATTR_TYPES.length,
@@ -225,7 +227,7 @@ public class LSHFIndex
                 META_TUPLE_PROJ_LIST,
                 null);
 
-        FileScan stateScan = new FileScan(LAYER_STATE_HEAPFILE_NAME+attributeColumnNumber,
+        FileScan stateScan = new FileScan(getLSHFIndexLayerStateFileName(this.relationName, attributeColumnNumber),
                 STATE_TUPLE_ATTR_TYPES,
                 new short[0],
                 (short) STATE_TUPLE_ATTR_TYPES.length,
@@ -280,13 +282,14 @@ public class LSHFIndex
         for (int layer = 0; layer < hashValues.length; layer++)
         {
             String hashValue = hashValues[layer];
-            Heapfile heapFile = new Heapfile(generateBinHeapFileName(layer, attributeColumnNumber, hashValue));
+            Heapfile heapFile = new Heapfile(generateBinHeapFileName(relationName, layer, attributeColumnNumber, hashValue));
             insertRIDIntoHeapfile(heapFile, rid);
         }
     }
 
-    public static String generateBinHeapFileName(int layer, int attributeColumnNumber,String hash) {
-        return "col" + attributeColumnNumber + "lay" + layer + "bin" + hash;
+    public static String generateBinHeapFileName(String relation, int layer, int attributeColumnNumber, String hash)
+    {
+        return "rel" + relation + "col" + attributeColumnNumber + "lay" + layer + "bin" + hash;
     }
 
     private void insertRIDIntoHeapfile(Heapfile heapFile, RID rid)
@@ -309,7 +312,7 @@ public class LSHFIndex
         List<String> binNames = new ArrayList<>();
         for (int layer = 0; layer < hashValues.length; layer++)
         {
-            binNames.add(generateBinHeapFileName(layer, attributeColumnNumber, hashValues[layer]));
+            binNames.add(generateBinHeapFileName(relationName, layer, attributeColumnNumber, hashValues[layer]));
         }
         return binNames;
     }
@@ -325,7 +328,6 @@ public class LSHFIndex
         // attr[1] - slotNo
 
         // Dump all the record ID's from all the bins into ridDump
-        ScriptMetrics.setTimeUnionDeduplicationStart();
         Heapfile ridDump = openDeleteAndOpenHeapFile(RID_DUMP_HEAP_FILE_NAME);
         for (String hash : hashValues)
         {
@@ -360,12 +362,14 @@ public class LSHFIndex
         TupleOrder sortOrder = new TupleOrder(TupleOrder.Ascending);
         Heapfile cleanRidDump = openDeleteAndOpenHeapFile(CLEAN_RID_DUMP_HEAP_FILE_NAME);
         Sort ridDumpSort = new Sort(RID_DUMP_TUPLE_ATTR_TYPES, (short) RID_DUMP_TUPLE_ATTR_TYPES.length, RID_DUMP_TUPLE_STR_LENGTHS, ridDumpScan, sortFieldNumber, sortOrder, RID_DUMP_TUPLE_STR_LENGTHS[0], Query.numBuffersForSort);
-        try {
+        try
+        {
             // iterate over sorted RID_DUMP_HEAP_FILE
             // Ignore duplicates and add unique records to cleanRIDDump
             Tuple sortedRidDumpTuple = ridDumpSort.get_next();
             String prevUniqueID = "";
-            while (sortedRidDumpTuple != null) {
+            while (sortedRidDumpTuple != null)
+            {
 
                 String currentUniqueID = sortedRidDumpTuple.getStrFld(3);
 
@@ -375,13 +379,13 @@ public class LSHFIndex
                 prevUniqueID = currentUniqueID;
                 sortedRidDumpTuple = ridDumpSort.get_next();
             }
-        } finally {
+        }
+        finally
+        {
             ridDumpSort.close();
             ridDumpScan.close();
             ridDump.deleteFile();
         }
-        ScriptMetrics.setTimeUnionDeduplicationEnd();
-        ScriptMetrics.setTimeUnionDataCopyStart();
 
         // Read from CLEAN_RID_DUMP_HEAP_FILE, extract the tuple for that RID in the Data File, insert into union dump.
         // Expected no duplicates
@@ -391,7 +395,7 @@ public class LSHFIndex
 
         // Create delete create again.
         // Clearing previous unionDump and starting fresh.
-        Heapfile unionDump = openDeleteAndOpenHeapFile(UNION_DUMP_HEAP_FILE_NAME);
+        Heapfile unionDump = openDeleteAndOpenHeapFile(getLshUnionDumpFileName(relationName));
 
         while (cleanRidTuple != null)
         {
@@ -402,13 +406,36 @@ public class LSHFIndex
 
             cleanRidTuple = cleanRidScan.get_next();
         }
-        ScriptMetrics.setTimeUnionDataCopyEnd();
         cleanRidScan.close();
         cleanRidDump.deleteFile();
 
         return unionDump;
     }
 
+    public void deleteRecord(Vector100Dtype vector, RID rid) throws Exception 
+    {
+        String[] hashValues = getAllLayersHash(vector);
+        for (int layer = 0; layer < hashValues.length; layer++)
+        {
+            String hashValue = hashValues[layer];
+            Heapfile heapFile = new Heapfile(generateBinHeapFileName(relationName, layer, attributeColumnNumber, hashValue));
+            FileScan binScan = new FileScan(generateBinHeapFileName(relationName, layer, attributeColumnNumber, hashValue), BIN_TUPLE_ATTR_TYPES, new short[0], (short) BIN_TUPLE_ATTR_TYPES.length, BIN_TUPLE_ATTR_TYPES.length, BIN_TUPLE_PROJ_LIST, null);
+            Tuple binTuple = binScan.get_next();
+            while (binTuple != null)
+            {
+                int pageNo = binTuple.getIntFld(1);
+                int slotNo = binTuple.getIntFld(2);
+                RID currentRID = new RID(new PageId(pageNo), slotNo);
+                if (currentRID.equals(rid))
+                {
+                    heapFile.deleteRecord(currentRID);
+                    break;
+                }
+                binTuple = binScan.get_next();
+            }
+            binScan.close();
+        }
+    }
 
     @Override
     public boolean equals(Object obj)
@@ -424,10 +451,26 @@ public class LSHFIndex
                 (Arrays.equals(this.layers, otherIndex.layers)));
     }
 
-    private Heapfile openDeleteAndOpenHeapFile(String fileName) throws Exception {
+    private Heapfile openDeleteAndOpenHeapFile(String fileName) throws
+                                                                Exception
+    {
         Heapfile hf = new Heapfile(fileName);
         hf.deleteFile();
         return new Heapfile(fileName);
+    }
+
+    private static String getLSHFIndexLayerStateFileName(String relName, int attributeColumnNumber)
+    {
+        return LAYER_STATE_HEAPFILE_NAME + relName + attributeColumnNumber;
+    }
+
+    private static String getLSHFIndexLayerMetaDataFileName(String relName, int attributeColumnNumber)
+    {
+        return LAYER_METADATA_HEAPFILE_NAME + relName + attributeColumnNumber;
+    }
+
+    public static String getLshUnionDumpFileName(String relationName) {
+        return relationName + UNION_DUMP_HEAP_FILE_NAME_SUFFIX;
     }
 
 }

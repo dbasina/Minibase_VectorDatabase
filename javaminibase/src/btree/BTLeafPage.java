@@ -29,7 +29,7 @@ public class BTLeafPage extends BTSortedPage
      *
      * @param pageno  Input parameter. To specify which page number the
      *                BTLeafPage will correspond to.
-     * @param keyType either AttrType.attrInteger or AttrType.attrString.
+     * @param keyType either AttrType.attrInteger or AttrType.attrString or AttrType.attrReal.
      *                Input parameter.
      * @throws IOException            error from the lower layer
      * @throws ConstructPageException BTLeafPage constructor error
@@ -48,7 +48,7 @@ public class BTLeafPage extends BTSortedPage
      *
      * @param page    input parameter. To specify which page  the
      *                BTLeafPage will correspond to.
-     * @param keyType either AttrType.attrInteger or AttrType.attrString.
+     * @param keyType either AttrType.attrInteger or AttrType.attrString or AttrType.attrReal.
      *                Input parameter.
      * @throws IOException            error from the lower layer
      * @throws ConstructPageException BTLeafPage constructor error
@@ -65,7 +65,7 @@ public class BTLeafPage extends BTSortedPage
      * new a page, associate the BTLeafPage instance with the Page instance,
      * also it sets the type to be NodeType.LEAF.
      *
-     * @param keyType either AttrType.attrInteger or AttrType.attrString.
+     * @param keyType either AttrType.attrInteger or AttrType.attrString or AttrType.attrReal.
      *                Input parameter.
      * @throws IOException            error from the lower layer
      * @throws ConstructPageException BTLeafPage constructor error

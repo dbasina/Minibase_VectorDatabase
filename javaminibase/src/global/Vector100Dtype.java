@@ -18,6 +18,17 @@ public class Vector100Dtype
         }
         this.vector = vector;
     }
+
+    public static Vector100Dtype buildVector100Dtype(String[] vectorStringArr) {
+        short[] currVector = new short[100];
+        int i=0;
+        for(String s : vectorStringArr) {
+            currVector[i] = Short.parseShort(s);
+            i++;
+        }
+        return new Vector100Dtype(currVector);
+    }
+
     public double get_magnitude()
     {
         double sum = 0.0;
@@ -47,6 +58,11 @@ public class Vector100Dtype
         if(! (obj instanceof Vector100Dtype))
             return false;
         return Arrays.equals(this.vector, ((Vector100Dtype)obj).vector);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(vector);
     }
 
     @Override

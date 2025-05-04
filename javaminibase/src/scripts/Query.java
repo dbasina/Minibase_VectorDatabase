@@ -5,194 +5,30 @@ import java.io.IOException;
 import java.io.BufferedReader;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
-import bufmgr.PagePinnedException;
-import diskmgr.Pcounter;
 import global.*;
 import heap.Tuple;
 import index.NNIndexScan;
 import index.RSIndexScan;
-import iterator.FileScan;
 import iterator.FldSpec;
 import iterator.Iterator;
 import iterator.RelSpec;
+import iterator.TupleUtils;
+import scripts.phaseThree.DbmsEntry;
 
-import static global.SystemDefs.JavabaseBM;
 
 public class Query
 {
-    public static int numAttributes;
     public static AttrType[] attrTypes;
     public static short[] strLengths;
-
-
     private static int[] outputFieldNumbers;
     private static Iterator scan;
-    private static AttrType[] outputTupleAttrTypes;
-
     public static int numBuffersForSort;
 
-    public static void main(String[] args) throws Exception
-    {
-        ScriptMetrics.setTimeStarted();
-
-        if (args.length != 4)
-        {
-            System.err.println("query requires 4 arguments.");
-            System.exit(1);
-        }
-        String db_name = args[0].trim();
-        String query_specification_file_name = args[1].trim();
-        String index_option =  args[2].trim();
-        int num_buffers = Integer.parseInt(args[3].trim());
-
-//        Allocate 1/4th total buffers for sort
-        numBuffersForSort = num_buffers/4;
-        restartDb(db_name, num_buffers);
-        Pcounter.initialize();
-
-        BufferedReader br = new BufferedReader(new FileReader(query_specification_file_name));
-        String query_specification = br.readLine();
-        if (query_specification == null)
-        {
-            System.err.println("query_specification is null.");
-        }
-        query_specification = query_specification.trim();
-
-        if (query_specification.startsWith("Range("))
-        {
-            String specifications = query_specification.substring("Range(".length(), query_specification.length() - 1);
-            String[] parameters =  specifications.split(",");
-            if (parameters.length < 3)
-            {
-                throw new IOException("query_specification requires at least 3 parameters.");
-            }
-
-            // Extract the parameters from the query specification.
-            int vector_field_number = Integer.parseInt(parameters[0].trim());
-            String target_vector_file_name = parameters[1].trim();
-            int distance = Integer.parseInt(parameters[2].trim());
-            outputFieldNumbers = new int[parameters.length-3];
-            for(int i = 3; i < parameters.length; i++)
-            {
-                outputFieldNumbers[i-3] = Integer.parseInt(parameters[i].trim());
-            }
-
-            // Extract the target vector from the target vector file
-            Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
-
-            // Print the query details
-            System.out.println("Range Query Parsed:");
-            System.out.println("QA: " + vector_field_number + ", D: " + distance + ", target vector: " + Arrays.toString(target_vector.vector));
-            System.out.println("Output fields: " + Arrays.toString(outputFieldNumbers));
-
-            FldSpec[] projList = new FldSpec[outputFieldNumbers.length];
-            IntStream.range(0, outputFieldNumbers.length).forEach(i -> projList[i] = new FldSpec(new RelSpec(RelSpec.outer), outputFieldNumbers[i]));
-
-            scan = new RSIndexScan(
-//                    Choose to use LSHFIndex or not
-                    index_option.equals("Y") ? new IndexType(IndexType.Lsh) : null,
-                    null, null, attrTypes, strLengths, numAttributes, outputFieldNumbers.length, projList, null,
-                    vector_field_number, target_vector, distance
-            );
-        }
-        else if (query_specification.startsWith("NN("))
-        {
-            String specifications = query_specification.substring("NN(".length(), query_specification.length() - 1);
-            String[] parameters =  specifications.split(",");
-            if (parameters.length < 3)
-            {
-                throw new IOException("query_specification requires at least 3 parameters.");
-            }
-
-            // Extract the parameters from the query specification.
-            int vector_field_number = Integer.parseInt(parameters[0].trim());
-            String target_vector_file_name = parameters[1].trim();
-            int number_of_nearest_neighbors = Integer.parseInt(parameters[2].trim());
-            outputFieldNumbers = new int[parameters.length-3];
-            for(int i = 3; i < parameters.length; i++)
-            {
-                outputFieldNumbers[i-3] = Integer.parseInt(parameters[i].trim());
-            }
-
-            // Extract the target vector from the target vector file
-            Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
-
-            // Print the query details
-            System.out.println("NN Query Parsed:");
-            System.out.println("QA (vectorFieldNumber): " + vector_field_number + ", K: " + number_of_nearest_neighbors + ", target vector: " + Arrays.toString(target_vector.vector));
-            System.out.println("Output fields: " + Arrays.toString(outputFieldNumbers));
-
-            FldSpec[] projList = new FldSpec[outputFieldNumbers.length];
-            IntStream.range(0, outputFieldNumbers.length).forEach(i -> projList[i] = new FldSpec(new RelSpec(RelSpec.outer), outputFieldNumbers[i]));
-
-            scan = new NNIndexScan(
-//                    Choose to use LSHFIndex or not
-                    index_option.equals("Y") ? new IndexType(IndexType.Lsh) : null,
-                    null, null, attrTypes, strLengths, numAttributes, outputFieldNumbers.length, projList, null,
-                    vector_field_number, target_vector, number_of_nearest_neighbors
-            );
-        }
-        else
-        {
-            throw new RuntimeException("query_specification is not a valid query_specification.");
-        }
-
-        System.out.println("\n ---Output Tuples---");
-        try {
-            ScriptMetrics.setTimeDataSortStart();
-//        Iterate over scan
-            prepareOutputTupleAttrTypes();
-
-            Tuple t = scan.get_next();
-            while (t != null) {
-                printOutputTuple(t);
-                t = scan.get_next();
-                ScriptMetrics.incrementNumberOfTuplesReturned();
-            }
-            scan.close();
-            ScriptMetrics.setTimeDataSortEnd();
-        } finally {
-            try {
-                JavabaseBM.flushAllPages();
-            } catch (PagePinnedException ignored) {}
-        }
-        System.out.println("\n ---End Output---");
-
-        Pcounter.printPcounter();
-        ScriptMetrics.setTimeEnded();
-        ScriptMetrics.printMetricsReport();
-    }
-
-    private static void printOutputTuple(Tuple outTuple) throws Exception {
-        System.out.println();
-
-        for(int i = 0; i < outputTupleAttrTypes.length; i++){
-            switch (outputTupleAttrTypes[i].attrType) {
-                case AttrType.attrInteger:
-                    System.out.println("" + outTuple.getIntFld(i+1));
-                    break;
-                case AttrType.attrString:
-                    System.out.println(outTuple.getStrFld(i+1));
-                    break;
-                case AttrType.attrReal:
-                    System.out.println("" + outTuple.getFloFld(i+1));
-                    break;
-                case AttrType.attrVector100D:
-                    System.out.println(outTuple.get100DVectFld(i+1));
-                    break;
-            }
-        }
-    }
-
-    private static void prepareOutputTupleAttrTypes() {
-        ArrayList<AttrType> attrTypesList = new ArrayList<>();
-        Arrays.stream(outputFieldNumbers).forEach(outNum -> attrTypesList.add(attrTypes[outNum-1]));
-        outputTupleAttrTypes = attrTypesList.toArray(new AttrType[0]);
-    }
-
-    public static Vector100Dtype read_target_vector(String target_vector_file_name) throws Exception
+    public static Vector100Dtype read_target_vector(String target_vector_file_name) throws
+                                                                                    Exception
     {
         short[] vector = new short[100];
         Vector100Dtype target_vector;
@@ -217,40 +53,233 @@ public class Query
         return target_vector;
     }
 
-    public static void restartDb(String dbName, int numBuf) throws Exception {
-//        Restart Minibase
-        SystemDefs.MINIBASE_RESTART_FLAG = true;
-        new SystemDefs(BatchInsert.getDbFileSystemPath(dbName), BatchInsert.DB_SIZE_IN_PAGES, numBuf, "Clock");
+    public static void queryHandler(String querySpecificationFileName, String numBuf, String relName, AttrType[] relAttrTypes) throws
+                                                                                                                               Exception
+    {
+        String query_specification_file_name = querySpecificationFileName;
 
-//        Parse Db Meta data
-        FileScan dbMetadataScan = new FileScan(BatchInsert.DB_DATA_METADATA_HEAP_FILE_NAME,
-                new AttrType[]{new AttrType(AttrType.attrInteger)},
-                null,
-                (short)1,
-                1,
-                new FldSpec[] {new FldSpec(new RelSpec(RelSpec.outer), 1)},
-                null
-        );
+        int num_buffers = Integer.parseInt(numBuf);
 
-        ArrayList<Integer> metadataAttrTypes = new ArrayList<>();
-        Tuple t = dbMetadataScan.get_next();
-        while(t != null) {
-            metadataAttrTypes.add(t.getIntFld(1));
-            t = dbMetadataScan.get_next();
+//        Allocate 1/4th total buffers for sort
+        numBuffersForSort = num_buffers / 4;
+
+//        Set static fields for query processing
+        attrTypes = relAttrTypes;
+        int numAttributes = relAttrTypes.length;
+        strLengths = TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes);
+
+        BufferedReader br = new BufferedReader(new FileReader(query_specification_file_name));
+        String query_specification = br.readLine();
+        if (query_specification == null)
+        {
+            System.out.println("query_specification is null.");
+            return;
         }
-        dbMetadataScan.close();
+        query_specification = query_specification.trim();
 
-        ArrayList<AttrType> attrTypesList = new ArrayList<>();
-        int strAttributeCounts = 0;
-        for(Integer type : metadataAttrTypes) {
-            attrTypesList.add(new AttrType(type));
-            if(type == AttrType.attrString)
-                strAttributeCounts++;
+        if (query_specification.startsWith("Range("))
+        {
+            Optional<Iterator> scanOptional = validateAndPrepareRangeScan(query_specification, relName, attrTypes, num_buffers);
+            if (scanOptional.isEmpty())
+                return;
+            scan = scanOptional.get();
+        }
+        else if (query_specification.startsWith("NN("))
+        {
+            Optional<Iterator> scanOptional = validateAndPrepareNNScan(query_specification, relName, attrTypes, num_buffers);
+            if (scanOptional.isEmpty())
+                return;
+            scan = scanOptional.get();
+        }
+        else if (query_specification.startsWith("Sort("))
+        {
+            String specifications = query_specification.substring("Sort(".length(), query_specification.length() - 1);
+            String[] parameters = specifications.split(",");
+
+            // Extract the parameters from the query specification.
+            int vector_field_number = Integer.parseInt(parameters[0].trim());
+            String target_vector_file_name = parameters[1].trim();
+            int distance = Integer.parseInt(parameters[2].trim());
+
+            if (attrTypes[vector_field_number - 1].attrType != AttrType.attrVector100D)
+            {
+                System.out.println("Sort query is not possible on a non-100D vector column.");
+                return;
+            }
+
+            // Identify output fields
+            if (parameters[3].trim().equals("*"))
+            {
+                outputFieldNumbers = new int[attrTypes.length];
+                IntStream.range(0, attrTypes.length).forEach(i -> outputFieldNumbers[i] = i + 1);
+            }
+            else
+            {
+                outputFieldNumbers = new int[parameters.length - 3];
+                for (int i = 3; i < parameters.length; i++)
+                {
+                    outputFieldNumbers[i - 3] = Integer.parseInt(parameters[i].trim());
+                }
+            }
+
+            // Extract the target vector from the target vector file
+            Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
+
+            // Print the query details
+            System.out.println("Sort Query Parsed:");
+            System.out.println("QA: " + vector_field_number + ", D: " + distance + ", target vector: " + Arrays.toString(target_vector.vector));
+            System.out.println("Output fields: " + Arrays.toString(outputFieldNumbers));
+
+            // Define projList
+            FldSpec[] projList = new FldSpec[attrTypes.length];
+            IntStream.range(0, attrTypes.length).forEach(i -> projList[i] = new FldSpec(new RelSpec(RelSpec.outer), i+1));
+
+            scan = new RSIndexScan(null, relName, relName, attrTypes, strLengths, numAttributes, numAttributes, projList, null, vector_field_number, target_vector, distance);
+        }
+        else
+        {
+            System.out.println("query_specification is not a valid query_specification.");
+            return;
         }
 
-        numAttributes = metadataAttrTypes.size();
-        attrTypes = attrTypesList.toArray(new AttrType[0]);
-        strLengths = new short[strAttributeCounts];
-        IntStream.range(0, strAttributeCounts).forEach(i -> strLengths[i] = BatchInsert.MAX_STRING_LENGTH);
+        System.out.println("\n ---Output Tuples---");
+
+//        Iterate over scan
+        try
+        {
+            Tuple t = scan.get_next();
+            while (t != null)
+            {
+                TupleUtils.printFieldsFromTuple(t, attrTypes, outputFieldNumbers);
+                System.out.println();
+                t = scan.get_next();
+            }
+        }
+        finally
+        {
+            scan.close();
+        }
+
+        System.out.println("\n ---End Output---");
     }
+
+    public static Optional<Iterator> validateAndPrepareNNScan(String query_specification, String relName, AttrType[] attrTypes, int numBuf) throws
+                                                                                                                                                                                                Exception
+    {
+        String specifications = query_specification.substring("NN(".length(), query_specification.length() - 1);
+        String[] parameters = specifications.split(",");
+        numBuffersForSort = numBuf / 4;
+        strLengths = TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes);
+
+        // Extract the parameters from the query specification.
+        int vector_field_number = Integer.parseInt(parameters[0].trim());
+        String target_vector_file_name = parameters[1].trim();
+        int number_of_nearest_neighbors = Integer.parseInt(parameters[2].trim());
+        String indexOption = parameters[3].trim();
+        if (attrTypes[vector_field_number - 1].attrType != AttrType.attrVector100D)
+        {
+            System.out.println("NN query is not possible on a non-100D vector column.");
+            return Optional.empty();
+        }
+        if (indexOption.equals("Y") && !DbmsEntry.checkIfIndexExistsInDbMetaDataFile(relName, vector_field_number))
+        {
+            System.out.println("Index option is Y but index does not exist for relation = " + relName + " on fieldNumber = " + vector_field_number + ". Pls create an index before using it");
+            return Optional.empty();
+        }
+
+        // Define output fields
+        if (parameters[4].trim().equals("*"))
+        {
+            outputFieldNumbers = new int[attrTypes.length];
+            IntStream.range(0, attrTypes.length).forEach(i -> outputFieldNumbers[i] = i + 1);
+        }
+        else
+        {
+            outputFieldNumbers = new int[parameters.length - 4];
+            for (int i = 4; i < parameters.length; i++)
+            {
+                outputFieldNumbers[i - 4] = Integer.parseInt(parameters[i].trim());
+            }
+        }
+
+        int[] fieldNumbers = new int[attrTypes.length];
+        IntStream.range(0, attrTypes.length).forEach(i -> fieldNumbers[i] = i + 1);
+
+
+        // Extract the target vector from the target vector file
+        Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
+
+        // Print the query details
+        System.out.println("NN Query Parsed:");
+        System.out.println("QA (vectorFieldNumber): " + vector_field_number + ", K: " + number_of_nearest_neighbors + ", target vector: " + Arrays.toString(target_vector.vector));
+        System.out.println("Output fields: " + Arrays.toString(fieldNumbers));
+
+        FldSpec[] projList = new FldSpec[fieldNumbers.length];
+        IntStream.range(0, fieldNumbers.length).forEach(i -> projList[i] = new FldSpec(new RelSpec(RelSpec.outer), fieldNumbers[i]));
+
+        return Optional.of(new NNIndexScan(
+//                    Choose to use LSHFIndex or not
+                indexOption.equals("Y") ? new IndexType(IndexType.Lsh) : null, relName, null, attrTypes, strLengths, attrTypes.length, fieldNumbers.length, projList, null, vector_field_number, target_vector, number_of_nearest_neighbors));
+    }
+
+    public static Optional<Iterator> validateAndPrepareRangeScan(String query_specification, String relName, AttrType[] attrTypes, int numBuf) throws
+                                                                                                                                                                                                   Exception
+    {
+        String specifications = query_specification.substring("Range(".length(), query_specification.length() - 1);
+        String[] parameters = specifications.split(",");
+        numBuffersForSort = numBuf / 4;
+        strLengths = TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes);
+
+        // Extract the parameters from the query specification.
+        int vector_field_number = Integer.parseInt(parameters[0].trim());
+        String target_vector_file_name = parameters[1].trim();
+        int distance = Integer.parseInt(parameters[2].trim());
+        String indexOption = parameters[3].trim();
+
+        if (attrTypes[vector_field_number - 1].attrType != AttrType.attrVector100D)
+        {
+            System.out.println("Range query is not possible on a non-100D vector column.");
+            return Optional.empty();
+        }
+        if (indexOption.equals("Y") && !DbmsEntry.checkIfIndexExistsInDbMetaDataFile(relName, vector_field_number))
+        {
+            System.out.println("Index option is Y but index does not exist for relation = " + relName + " on fieldNumber = " + vector_field_number + ". Pls create an index before using it");
+            return Optional.empty();
+        }
+
+        // Define output fields
+        if (parameters[4].trim().equals("*"))
+        {
+            outputFieldNumbers = new int[attrTypes.length];
+            IntStream.range(0, attrTypes.length).forEach(i -> outputFieldNumbers[i] = i + 1);
+        }
+        else
+        {
+            outputFieldNumbers = new int[parameters.length - 4];
+            for (int i = 4; i < parameters.length; i++)
+            {
+                outputFieldNumbers[i - 4] = Integer.parseInt(parameters[i].trim());
+            }
+        }
+
+        int[] fieldNumbers = new int[attrTypes.length];
+        IntStream.range(0, attrTypes.length).forEach(i -> fieldNumbers[i] = i + 1);
+
+
+        // Extract the target vector from the target vector file
+        Vector100Dtype target_vector = read_target_vector(target_vector_file_name);
+
+        // Print the query details
+        System.out.println("Range Query Parsed:");
+        System.out.println("QA: " + vector_field_number + ", D: " + distance + ", target vector: " + Arrays.toString(target_vector.vector));
+        System.out.println("Output fields: " + Arrays.toString(fieldNumbers));
+
+        FldSpec[] projList = new FldSpec[fieldNumbers.length];
+        IntStream.range(0, fieldNumbers.length).forEach(i -> projList[i] = new FldSpec(new RelSpec(RelSpec.outer), fieldNumbers[i]));
+
+        return Optional.of(new RSIndexScan(
+//                    Choose to use LSHFIndex or not
+                indexOption.equals("Y") ? new IndexType(IndexType.Lsh) : null, relName, null, attrTypes, strLengths, attrTypes.length, fieldNumbers.length, projList, null, vector_field_number, target_vector, distance));
+    }
+
 }

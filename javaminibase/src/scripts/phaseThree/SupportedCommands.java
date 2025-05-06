@@ -7,7 +7,8 @@ public enum SupportedCommands {
     CREATE_INDEX("createindex", "createindex <rel name> <column id> <L> <H>"),
     BATCH_INSERT("batchinsert", "batchinsert <data file name> <rel name>"),
     BATCH_DELETE("batchdelete", "batchdelete <data file name> <rel name>"),
-    QUERY("query", "query <rel1 name> <rel2 name> <qsname> <numbuf>");
+    QUERY("query", "query <rel1 name> <rel2 name> <qsname> <numbuf>"),
+    PRINT_METADATA("meta", "meta");;
 
     private final String command;
     private final String usage;

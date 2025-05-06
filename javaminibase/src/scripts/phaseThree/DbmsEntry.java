@@ -30,6 +30,7 @@ public class DbmsEntry
     public static final String DB_METADATA_FILE_NAME = "db.metadata";
     private static final Scanner scanner = new Scanner(System.in);
     private static String currentOpenDb = null;
+    private static int recordsProcessedForProgress = 0;
 
     // DBMETADATA attribute definitions
     private static final AttrType[] DBMETADATA_TUPLE_ATTR_TYPES = new AttrType[1];
@@ -48,8 +49,6 @@ public class DbmsEntry
 
     enum IndexType
     {LSHF, BTREE}
-
-    ;
 
     public static void main(String[] args) throws
                                            Exception
@@ -96,6 +95,10 @@ public class DbmsEntry
                 else if (commandParts[0].equals(SupportedCommands.BATCH_DELETE.getCommand()))
                 {
                     handleBatchDeleteCommand(commandParts);
+                }
+                else if (commandParts[0].equals(SupportedCommands.PRINT_METADATA.getCommand()))
+                {
+                    printDbMetadata();
                 }
                 else
                 {
@@ -930,6 +933,7 @@ public class DbmsEntry
 
         final HashSet<RID> ridsToDeleteFromDataFile = new HashSet<>();
         Scan scan = relHeapFile.openScan();
+        recordsProcessedForProgress = 0;
         try {
             while(true) {
                 RID rid = new RID();
@@ -959,6 +963,8 @@ public class DbmsEntry
                     bTreeFile.Delete(key, rid);
                     bTreeFile.close();
                 }
+
+                reportProcessProgress();
             }
 
             for(RID ridToDelete : ridsToDeleteFromDataFile)
@@ -966,6 +972,61 @@ public class DbmsEntry
         } finally {
             scan.closescan();
         }
+    }
+
+    public static void printDbMetadata() throws Exception {
+        if(currentOpenDb == null) {
+            System.out.println("No DB open currently. Please open a new db first.");
+            return;
+        }
+
+        FileScan dbMetaDataScan = new FileScan(DB_METADATA_FILE_NAME,
+                new AttrType[]{new AttrType(AttrType.attrString)}, new short[] {MAX_STRING_LENGTH}, (short) 1, 1,
+                new FldSpec[]{new FldSpec(new RelSpec(RelSpec.outer), 1)}, null);
+        HashMap<String, ArrayList<String>> relToIndexMap = new HashMap<>();
+
+        try
+        {
+            Tuple t = dbMetaDataScan.get_next();
+            while (t != null)
+            {
+                String entry = t.getStrFld(1);
+                if (entry.startsWith("relation:"))
+                {
+                    relToIndexMap.put(entry.substring("relation:".length()), new ArrayList<>());
+                }
+                else if (entry.startsWith("index:"))
+                {
+                    String[] parts = entry.substring("index:".length()).split("\\.");
+                    relToIndexMap.get(parts[0]).add(entry);
+                }
+                t = dbMetaDataScan.get_next();
+            }
+        }
+        finally
+        {
+            dbMetaDataScan.close();
+        }
+
+        System.out.println("-------------DB Metadata-------------");
+        for(String relName : relToIndexMap.keySet()){
+            System.out.println(">> Relation Name - " + relName);
+
+            System.out.println(">> Attr Types :");
+            for(AttrType attrType : getRelationAttrTypes(relName)) {
+                System.out.println(attrType);
+            }
+
+            System.out.println(">> Indices : < columnNumber indexType >");
+            for(String indexEntry : relToIndexMap.get(relName)) {
+                String[] parts = indexEntry.split("\\.");
+                System.out.println(parts[1] + " " + parts[2]);
+            }
+
+            System.out.println();
+        }
+
+        System.out.println("-----------------End-----------------\n\n");
     }
 
     private static boolean matchRecordForFullTableScanDeletion(Tuple t, AttrType[] attrTypes, HashMap<Integer, HashSet<String>> colNumToValues) throws Exception{
@@ -993,6 +1054,7 @@ public class DbmsEntry
 
             AttrType[] attrTypes = getRelationAttrTypes(relName);
             short[] stringLengths = TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes);
+            recordsProcessedForProgress = 0;
 
             while ((tuple = scan.getNext(rid)) != null)
             {
@@ -1015,6 +1077,7 @@ public class DbmsEntry
                     throw new IOException("Unknown attribute type" + attrTypes[columnId].attrType);
                 }
                 bTreeFile.insert(key, rid);
+                reportProcessProgress();
             }
         }
         finally
@@ -1038,11 +1101,13 @@ public class DbmsEntry
 
             AttrType[] attrTypes = getRelationAttrTypes(relName);
             short[] stringLengths = TupleUtils.getStrFieldLengthsForConstantStrSizes(attrTypes);
-
+            recordsProcessedForProgress = 0;
             while ((tuple = scan.getNext(rid)) != null)
             {
                 tuple.setHdr((short) attrTypes.length, attrTypes, stringLengths);
                 lshfIndex.insertRecord(tuple.get100DVectFld(columnId), rid);
+
+                reportProcessProgress();
             }
         }
         finally
@@ -1216,10 +1281,9 @@ public class DbmsEntry
         boolean endOfFile = false;
 
         List<String[]> indexInfos = getAllRelationIndexInfos(relName);
-
+        recordsProcessedForProgress = 0;
         while (true)
         {
-            ArrayList<Vector100Dtype> vectorsInDataLine = new ArrayList<>();
             for (int i = 0; i < numAttributes; i++)
             {
                 tupleValue = br.readLine();
@@ -1246,8 +1310,6 @@ public class DbmsEntry
                         break;
                     case AttrType.attrVector100D:
                         Vector100Dtype input_vector100D = new Vector100Dtype();
-                        vectorsInDataLine.add(input_vector100D);
-
                         String[] tupleValueSplit = tupleValue.split("\\s+");
                         for (int j = 0; j < 100; j++)
                         {
@@ -1263,6 +1325,8 @@ public class DbmsEntry
                 break;
             RID rid = file.insertRecord(t.getTupleByteArray());
             updateIndexesOnInsert(relName, indexInfos, t, rid);
+
+            reportProcessProgress();
         }
         System.out.println("File " + getRelDataFileName(relName) + " created with " + file.getRecCnt() + " records.");
     }
@@ -1404,6 +1468,12 @@ public class DbmsEntry
     public static String getRelMetaDataFileName(String relName)
     {
         return relName + ".metadata";
+    }
+
+    private static void reportProcessProgress() {
+        recordsProcessedForProgress++;
+        if((recordsProcessedForProgress % 5000) == 0)
+            System.out.println("Total records processed = " + recordsProcessedForProgress);
     }
 
 //        This is an intermittent exception that occurs only when the allotted buffers are low in Query.java. The exception causes an irregular

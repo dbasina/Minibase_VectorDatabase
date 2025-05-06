@@ -1198,6 +1198,8 @@ public class DbmsEntryTest {
         validateBtreeHasRids.accept(new BTreeFile(DbmsEntry.getBTreeFileName(relName3, 2)), ridsInDataFile);
         validateBtreeHasRids.accept(new BTreeFile(DbmsEntry.getBTreeFileName(relName3, 3)), ridsInDataFile);
 
+        DbmsEntry.printDbMetadata();
+
         DbmsEntry.handleDbCloseCommand();
         System.out.println("PASS - testBatchDelete\n\n");
     }
